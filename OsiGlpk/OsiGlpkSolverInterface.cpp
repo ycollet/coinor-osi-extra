@@ -119,8 +119,8 @@ const double GlpkZeroTol = 1.0e-9;
 */
 
 #define OGSI_TRACK_SOLVERS 0
-#define OGSI_TRACK_FRESH 0
-#define OGSI_VERBOSITY 0
+#define OGSI_TRACK_FRESH   0
+#define OGSI_VERBOSITY     0
 
 //#############################################################################
 // File-local methods
@@ -155,9 +155,7 @@ inline void checkGLPKerror (int err, std::string glpkfuncname, std::string osime
 */
 void OGSI::initialSolve() {
 # if OGSI_TRACK_FRESH > 0
-    std::cout
-            << "OGSI(" << std::hex << this << std::dec
-            << ")::initialSolve." << std::endl;
+    std::cout << "OGSI(" << std::hex << this << std::dec << ")::initialSolve." << std::endl;
 # endif
 
     glp_prob *model = getMutableModelPtr();
@@ -168,24 +166,23 @@ void OGSI::initialSolve() {
     /*
       Solve the lp.
     */
-    glp_smcp parm;
-    fill_smcp(model, &parm);
     int err = glp_simplex(model, &parm);
 
     // for Glpk, a solve fails if the initial basis is invalid or singular
     // thus, we construct a (advanced) basis first and try again
-#ifdef GLPE_BADB
+#ifdef GLP_EBADB
     if (err == GLP_EBADB) {
         glp_adv_basis(model,0);
         err = glp_simplex(model, &parm);
-    } else
+    }
+#else
+    if (err == GLP_ESING || err == GLP_EBADB || err == GLP_ECOND || err == GLP_EBOUND) {
+        glp_adv_basis(model,0);
+	err = glp_simplex(model, &parm);
+    }
 #endif
-        if (err == GLP_ESING || err == GLP_EBADB || err == GLP_ECOND || err == GLP_EBOUND) {
-            glp_adv_basis(model,0);
-            err = glp_simplex(model, &parm);
-        }
 
-    iter_used_ = find_cps(model)->it_cnt;
+    iter_used_ = model->it_cnt;
     /*
       Sort out the various state indications.
 
@@ -199,13 +196,13 @@ void OGSI::initialSolve() {
       If we ever reach the default case, we're deeply confused.
     */
     isIterationLimitReached_ = false;
-    isTimeLimitReached_ = false;
-    isAbandoned_ = false;
-    isPrimInfeasible_ = false;
-    isDualInfeasible_ = false;
-    isFeasible_ = false;
-    isObjLowerLimitReached_ = false;
-    isObjUpperLimitReached_ = false;
+    isTimeLimitReached_      = false;
+    isAbandoned_             = false;
+    isPrimInfeasible_        = false;
+    isDualInfeasible_        = false;
+    isFeasible_              = false;
+    isObjLowerLimitReached_  = false;
+    isObjUpperLimitReached_  = false;
 
     switch (err) {
     case 0: {
@@ -265,42 +262,39 @@ void OGSI::initialSolve() {
 
 void OGSI::resolve() {
 # if OGSI_TRACK_FRESH > 0
-    std::cout
-            << "OGSI(" << std::hex << this << std::dec
-            << ")::resolve." << std::endl;
+    std::cout << "OGSI(" << std::hex << this << std::dec << ")::resolve." << std::endl;
 # endif
 
     glp_prob *model = getMutableModelPtr();
     freeCachedData(OGSI::FREECACHED_RESULTS);
 
     // glp_simplex will use the current basis if possible
-    glp_smcp parm;
-    fill_smcp(lp, &parm);
-    int err = glp_simplex(model, &parm);
+    int err = glp_simplex(model, &parm_);
 
     // for Glpk, a solve fails if the initial basis is invalid or singular
     // thus, we construct a (advanced) basis first and try again
 #ifdef GLP_EBADB
     if (err == GLP_EBADB) {
         glp_adv_basis(model,0);
-        err = glp_simplex(model, &parm);
-    } else
+        err = glp_simplex(model, &parm_);
+    }
+#else
+    if (err == GLP_ESING || err == GLP_EFAIL) {
+        glp_adv_basis(model,0);
+	err = glp_simplex(model, &parm_);
+    }
 #endif
-        if (err == GLP_ESING || err == GLP_EFAIL) {
-            glp_adv_basis(model,0);
-            err = glp_simplex(model, &parm);
-        }
 
-    iter_used_ = find_cps(model)->it_cnt;
+    iter_used_ = model->it_cnt;
 
     isIterationLimitReached_ = false;
-    isTimeLimitReached_ = false;
-    isAbandoned_ = false;
-    isObjLowerLimitReached_ = false;
-    isObjUpperLimitReached_ = false;
-    isPrimInfeasible_ = false;
-    isDualInfeasible_ = false;
-    isFeasible_ = false;
+    isTimeLimitReached_      = false;
+    isAbandoned_             = false;
+    isObjLowerLimitReached_  = false;
+    isObjUpperLimitReached_  = false;
+    isPrimInfeasible_        = false;
+    isDualInfeasible_        = false;
+    isFeasible_              = false;
 
     switch (err) {
     case 0: {
@@ -366,7 +360,6 @@ void OGSI::resolve() {
   generators is more recent.
 */
 void OGSI::branchAndBound ()
-
 {
     glp_prob *model = getMutableModelPtr();
     /*
@@ -385,14 +378,14 @@ void OGSI::branchAndBound ()
     if (glp_get_num_int(model)) {
         int err = GLP_EFAIL;
 
-#   ifdef GLPK_HAS_INTOPT
+#ifdef GLPK_HAS_INTOPT
         err = solve_mip(model, GLP_ON);
-#   else
+#else
         if (glp_get_status(model) != GLP_OPT) {
             initialSolve();
         }
         err = solve_mip(model, GLP_OFF);
-#   endif
+#endif
         /*
           We have a result. What is it? Start with a positive attitude and revise as
           needed. The various GLP_E* and GLP_* defines are stable back as far as
@@ -423,15 +416,15 @@ void OGSI::branchAndBound ()
           Previous comments expressed uncertainty about the iteration count. This
           should be checked at some point. -- lh, 070709 --
         */
-        iter_used_ = find_cps(model)->it_cnt;
+        iter_used_ = model->it_cnt;
         isIterationLimitReached_ = false;
-        isTimeLimitReached_ = false;
-        isAbandoned_ = false;
-        isPrimInfeasible_ = false;
-        isDualInfeasible_ = false;
-        isFeasible_ = false;
-        isObjLowerLimitReached_ = false;
-        isObjUpperLimitReached_ = false;
+        isTimeLimitReached_      = false;
+        isAbandoned_             = false;
+        isPrimInfeasible_        = false;
+        isDualInfeasible_        = false;
+        isFeasible_              = false;
+        isObjLowerLimitReached_  = false;
+        isObjUpperLimitReached_  = false;
 
         switch (err) {
         case 0:
@@ -535,7 +528,7 @@ bool OGSI::setIntParam (OsiIntParam key, int value)
     case OsiMaxNumIteration: {
         if (value >= 0) {
             maxIteration_ = value;
-            find_cps(lp)->it_lim = value;
+            parm_.it_lim  = value;
             retval = true;
         } else {
             retval = false;
@@ -577,7 +570,6 @@ bool OGSI::setIntParam (OsiIntParam key, int value)
 */
 
 bool OGSI::setDblParam (OsiDblParam key, double value)
-
 {
     bool retval = false;
 
@@ -587,9 +579,9 @@ bool OGSI::setDblParam (OsiDblParam key, double value)
     {
         dualObjectiveLimit_ = value;
         if (getObjSense() == 1) {			// minimization
-            find_cps(lp)->obj_ul = value;
+            parm_.obj_ul = value;
         } else {            				// maximization
-            find_cps(lp)->obj_ll = value;
+            parm_.obj_ll = value;
         }
         retval = true;
         break;
@@ -599,9 +591,9 @@ bool OGSI::setDblParam (OsiDblParam key, double value)
     {
         primalObjectiveLimit_ = value;
         if (getObjSense() == 1) {
-            find_cps(lp)->obj_ll = value;
+            parm_.obj_ll = value;
         } else {
-            find_cps(lp)->obj_ul = value;
+            parm_.obj_ul = value;
         }
         retval = true;
         break;
@@ -609,7 +601,7 @@ bool OGSI::setDblParam (OsiDblParam key, double value)
     case OsiDualTolerance: {
         if (value >= 0 && value <= .001) {
             dualTolerance_ = value;
-            find_cps(lp)->tol_dj = value;
+            parm_.tol_dj   = value;
             retval = true;
         } else {
             retval = false;
@@ -619,7 +611,7 @@ bool OGSI::setDblParam (OsiDblParam key, double value)
     case OsiPrimalTolerance: {
         if (value >= 0 && value <= .001) {
             primalTolerance_ = value;
-            find_cps(lp_)->tol_bnd = value;
+            parm_.tol_bnd    = value;
             retval = true;
         } else {
             retval = false;
@@ -650,8 +642,7 @@ bool OGSI::setStrParam (OsiStrParam key,
     switch (key) {
     case OsiProbName: {
         probName_ = value;
-        if (probName_.length() == 0)
-            probName_ = "Pb";
+        if (probName_.length() == 0) probName_ = "Pb";
         glp_set_prob_name(lp_,const_cast<char *>(value.c_str()));
         retval = true;
         break;
@@ -681,7 +672,6 @@ namespace {
 
 void unimp_hint (CoinMessageHandler *hdl, bool glpkSense, bool hintSense,
                  OsiHintStrength hintStrength, const char *msgString)
-
 {
     if (glpkSense != hintSense) {
         std::string message = "glpk ";
@@ -705,10 +695,8 @@ void unimp_hint (CoinMessageHandler *hdl, bool glpkSense, bool hintSense,
 bool OGSI::setHintParam (OsiHintParam key, bool sense,
                          OsiHintStrength strength, void *info)
 /*
-  OSI provides arrays for the sense and strength. OGSI provides the array for
-  info.
+  OSI provides arrays for the sense and strength. OGSI provides the array for info.
 */
-
 {
     bool retval = false;
     CoinMessageHandler *msgHdl = messageHandler();
@@ -730,10 +718,13 @@ bool OGSI::setHintParam (OsiHintParam key, bool sense,
 
     if (retval == false) return (false);
     info_[key] = info;
+    
     /*
       Did the client say `ignore this'? Who are we to argue.
     */
+    
     if (strength == OsiHintIgnore) return (true);
+    
     /*
       We have a valid hint which would be impolite to simply ignore. Deal with
       it as best we can. But say something if we're ignoring the hint.
@@ -741,13 +732,14 @@ bool OGSI::setHintParam (OsiHintParam key, bool sense,
       This is under construction. For the present, we don't distinguish between
       initial solve and resolve.
     */
+    
     switch (key) {
     case OsiDoPresolveInInitial:
     case OsiDoPresolveInResolve: {
         if (sense == false) {
-            if (strength >= OsiHintTry) find_cps(lp_)->presol = 0;
+            if (strength >= OsiHintTry) parm_.presolve = 0;
         } else {
-            find_cps(lp_)->presol = 1;
+            parm_.presolve = 1;
         }
         retval = true;
         break;
@@ -756,9 +748,9 @@ bool OGSI::setHintParam (OsiHintParam key, bool sense,
     case OsiDoDualInResolve: {
         unimp_hint(msgHdl,false,sense,strength,"exclusive use of dual simplex");
         if (sense == false) {
-            if (strength >= OsiHintDo) find_cps(lp_)->dual = 0;
+	    if (strength >= OsiHintDo) parm_.meth = GLP_PRIMAL; // Use primal simplex
         } else {
-            find_cps(lp_)->dual = 1;
+	    parm_.meth = GLP_DUAL; // Use dual simplex;
         }
         retval = true;
         break;
@@ -778,9 +770,9 @@ bool OGSI::setHintParam (OsiHintParam key, bool sense,
     */
     case OsiDoScale: {
         if (sense == false) {
-            if (strength >= OsiHintTry) find_cps(lp_)->scale = 0;
+            if (strength >= OsiHintTry) glp_unscale_prob(lp_);
         } else {
-            find_cps(lp_)->scale = 3;
+	    glp_scale_prob(lp_, GLP_SF_GM | GLP_SF_EQ);
         }
         retval = true;
         break;
@@ -792,18 +784,18 @@ bool OGSI::setHintParam (OsiHintParam key, bool sense,
     case OsiDoReducePrint: {
         if (sense == true) {
             if (strength <= OsiHintTry) {
-                find_cps(lp_)->msg_lev = 1;
+                parm_.msg_lev = 1;
             } else {
-                find_cps(lp_)->msg_lev = 0;
+                parm_.msg_lev = 0;
             }
         } else {
             if (strength <= OsiHintTry) {
-                find_cps(lp_)->msg_lev = 2;
+                parm_.msg_lev = 2;
             } else {
-                find_cps(lp_)->msg_lev = 3;
+                parm_.msg_lev = 3;
             }
         }
-        int logLevel = find_cps(lp_)->msg_lev;
+        int logLevel = parm_.msg_lev;
         messageHandler()->setLogLevel(logLevel);
         retval = true;
         break;
@@ -825,22 +817,21 @@ bool OGSI::setHintParam (OsiHintParam key, bool sense,
 }
 //-----------------------------------------------------------------------------
 
-bool
-OGSI::getIntParam(OsiIntParam key, int& value) const {
+bool OGSI::getIntParam(OsiIntParam key, int& value) const {
     bool retval = false;
     switch(key) {
     case OsiMaxNumIteration:
-        value = maxIteration_;
+        value  = maxIteration_;
         retval = true;
         break;
 
     case OsiMaxNumIterationHotStart:
-        value = hotStartMaxIteration_;
+        value  = hotStartMaxIteration_;
         retval = true;
         break;
 
     case OsiNameDiscipline:
-        value = nameDisc_;
+        value  = nameDisc_;
         retval = true;
         break;
 
@@ -853,32 +844,31 @@ OGSI::getIntParam(OsiIntParam key, int& value) const {
 
 //-----------------------------------------------------------------------------
 
-bool
-OGSI::getDblParam(OsiDblParam key, double& value) const {
+bool OGSI::getDblParam(OsiDblParam key, double& value) const {
     bool retval = false;
     switch(key) {
     case OsiDualObjectiveLimit:
-        value = dualObjectiveLimit_;
+        value  = dualObjectiveLimit_;
         retval = true;
         break;
 
     case OsiPrimalObjectiveLimit:
-        value = primalObjectiveLimit_;
+        value  = primalObjectiveLimit_;
         retval = true;
         break;
 
     case OsiDualTolerance:
-        value = dualTolerance_;
+        value  = dualTolerance_;
         retval = true;
         break;
 
     case OsiPrimalTolerance:
-        value = primalTolerance_;
+        value  = primalTolerance_;
         retval = true;
         break;
 
     case OsiObjOffset:
-        value = glp_get_obj_coef(getMutableModelPtr(),0);
+        value  = glp_get_obj_coef(getMutableModelPtr(),0);
         retval = true;
         break;
 
@@ -889,9 +879,7 @@ OGSI::getDblParam(OsiDblParam key, double& value) const {
     return retval;
 }
 
-
-bool
-OGSI::getStrParam(OsiStrParam key, std::string & value) const {
+bool OGSI::getStrParam(OsiStrParam key, std::string & value) const {
     //	bool retval = false;
     switch (key) {
     case OsiProbName:
@@ -905,6 +893,7 @@ OGSI::getStrParam(OsiStrParam key, std::string & value) const {
     }
     return true;
 }
+
 //#############################################################################
 // Methods returning info on how the solution process terminated
 //#############################################################################
@@ -1024,7 +1013,6 @@ bool OGSI::isFeasible() const {
   Nonbasic fixed variables (GLP_NS) are translated to CWSB::atLowerBound.
 */
 CoinWarmStart *OGSI::getWarmStart() const
-
 {
     /*
       Create an empty basis and size it to the correct dimensions.
@@ -1123,8 +1111,7 @@ bool OGSI::setWarmStart (const CoinWarmStart* warmstart)
     /*
       Check that the parameter is a CWSB of the appropriate size.
     */
-    const CoinWarmStartBasis *ws =
-        dynamic_cast<const CoinWarmStartBasis *>(warmstart);
+    const CoinWarmStartBasis *ws = dynamic_cast<const CoinWarmStartBasis *>(warmstart);
     if (ws == 0) {
         return false;
     }
@@ -1135,11 +1122,13 @@ bool OGSI::setWarmStart (const CoinWarmStart* warmstart)
     if (numcols != getNumCols() || numrows != getNumRows()) {
         return (false);
     }
+    
     /*
       Looks like a basis. Translate to the appropriate codes for glpk and install.
       Row status first (logical/artificial variables), then column status
       (architectural variables).
     */
+    
     for (int i = 0; i < numrows; i++) {
         int stati;
 
@@ -1201,7 +1190,6 @@ bool OGSI::setWarmStart (const CoinWarmStart* warmstart)
     return (true);
 }
 
-
 //#############################################################################
 // Hotstart related methods (primarily used in strong branching)
 //#############################################################################
@@ -1213,25 +1201,19 @@ void OGSI::markHotStart() {
     numcols = getNumCols();
     numrows = getNumRows();
     if(numcols > hotStartCStatSize_) {
-        delete[] hotStartCStat_;
+        delete [] hotStartCStat_;
         delete [] hotStartCVal_;
         delete [] hotStartCDualVal_;
         hotStartCStatSize_ = static_cast<int>(1.2 * static_cast<double>(numcols)); // get some extra space for future hot starts
-        hotStartCStat_ = new int[hotStartCStatSize_];
-        hotStartCVal_ = new double[hotStartCStatSize_];
-        hotStartCDualVal_ = new double[hotStartCStatSize_];
+        hotStartCStat_     = new int[hotStartCStatSize_];
+        hotStartCVal_      = new double[hotStartCStatSize_];
+        hotStartCDualVal_  = new double[hotStartCStatSize_];
     }
     int j;
     for(j = 0; j < numcols; j++) {
-        int stat;
-        double val;
-        double dualVal;
-        stat = glp_get_col_stat(model,j);
-        val = glp_get_col_prim(model,j);
-        dualVal = glp_get_col_dual(model,j);
-        hotStartCStat_[j] = stat;
-        hotStartCVal_[j] = val;
-        hotStartCDualVal_[j] = dualVal;
+        hotStartCStat_[j]    = glp_get_col_stat(model,j);
+        hotStartCVal_[j]     = glp_get_col_prim(model,j);
+        hotStartCDualVal_[j] = glp_get_col_dual(model,j);
     }
 
     if(numrows > hotStartRStatSize_) {
@@ -1239,32 +1221,24 @@ void OGSI::markHotStart() {
         delete [] hotStartRVal_;
         delete [] hotStartRDualVal_;
         hotStartRStatSize_ = static_cast<int>(1.2 * static_cast<double>(numrows)); // get some extra space for future hot starts
-        hotStartRStat_ = new int[hotStartRStatSize_];
-        hotStartRVal_ = new double[hotStartRStatSize_];
-        hotStartRDualVal_ = new double[hotStartRStatSize_];
+        hotStartRStat_     = new int[hotStartRStatSize_];
+        hotStartRVal_      = new double[hotStartRStatSize_];
+        hotStartRDualVal_  = new double[hotStartRStatSize_];
     }
     int i;
     for(i = 0; i < numrows; i++) {
-        int stat;
-        double val;
-        double dualVal;
-        stat = glp_get_row_stat(model,i+1);
-        val = glp_get_row_prim(model,i+1);
-        dualVal = glp_get_row_dual(model,i+1);
-        hotStartRStat_[i] = stat;
-        hotStartRVal_[i] = val;
-        hotStartRDualVal_[i] = dualVal;
+        hotStartRStat_[i]    = glp_get_row_stat(model,i+1);
+        hotStartRVal_[i]     = glp_get_row_prim(model,i+1);
+        hotStartRDualVal_[i] = glp_get_row_dual(model,i+1);
     }
 }
 
 //-----------------------------------------------------------------------------
 
 void OGSI::solveFromHotStart() {
-#     if OGSI_TRACK_FRESH > 0
-    std::cout
-            << "OGSI(" << std::hex << this << std::dec
-            << ")::solveFromHotStart." << std::endl;
-#     endif
+#if OGSI_TRACK_FRESH > 0
+    std::cout << "OGSI(" << std::hex << this << std::dec << ")::solveFromHotStart." << std::endl;
+#endif
     glp_prob *model = getMutableModelPtr();
     int numcols, numrows;
 
@@ -1339,10 +1313,8 @@ const double * OGSI::getColLower() const {
             double lb;
             double ub;
             type = glp_get_col_type(model,i+1);
-            lb = glp_get_col_lb(model,i+1);
-            if (lb == -DBL_MAX) lb = 0.0;
-            ub = glp_get_col_ub(model,i+1);
-            if (ub == +DBL_MAX) ub = 0.0;
+            lb = glp_get_col_lb(model,i+1); if (lb == -DBL_MAX) lb = 0.0;
+            ub = glp_get_col_ub(model,i+1); if (ub == +DBL_MAX) ub = 0.0;
             switch (type) {
             case GLP_FR:
                 lb = -inf;
@@ -1392,7 +1364,7 @@ const char * OGSI::getRowSense() const {
         int numrows = getNumRows();
         if(numrows > 0) {
             rowsense_ = new char[numrows];
-            rhs_ = new double[numrows];
+            rhs_      = new double[numrows];
             rowrange_ = new double[numrows];
         }
 
@@ -1405,7 +1377,7 @@ const char * OGSI::getRowSense() const {
             double range;
             convertBoundToSense(rowlower[i], rowupper[i], sense, right, range);
             rowsense_[i] = sense;
-            rhs_[i] = right;
+            rhs_[i]      = right;
             rowrange_[i] = range;
         }
     }
@@ -1451,10 +1423,8 @@ const double * OGSI::getRowLower() const {
             double lb;
             double ub;
             type = glp_get_row_type(model,i+1);
-            lb = glp_get_row_lb(model,i+1);
-            if (lb == -DBL_MAX) lb = 0.0;
-            ub = glp_get_row_ub(model,i+1);
-            if (ub == +DBL_MAX) ub = 0.0;
+            lb = glp_get_row_lb(model,i+1); if (lb == -DBL_MAX) lb = 0.0;
+            ub = glp_get_row_ub(model,i+1); if (ub == +DBL_MAX) ub = 0.0;
             switch(type) {
             case GLP_FR:
                 lb = -inf;
@@ -1565,8 +1535,8 @@ const CoinPackedMatrix * OGSI::getMatrixByRow() const {
         }
         delete [] colind;
         delete [] colelem;
-        if(numcols)
-            matrixByRow_->removeGaps();
+	
+        if(numcols) matrixByRow_->removeGaps();
     }
     return matrixByRow_;
 }
@@ -1592,10 +1562,11 @@ const CoinPackedMatrix * OGSI::getMatrixByCol() const {
             }
             matrixByCol_->appendCol(rowsize, rowind+1, rowelem+1);
         }
+	
         delete [] rowind;
         delete [] rowelem;
-        if(numrows)
-            matrixByCol_->removeGaps();
+	
+        if(numrows) matrixByCol_->removeGaps();
     }
     return matrixByCol_;
 }
@@ -1623,35 +1594,28 @@ double OGSI::getInfinity() const {
 */
 
 const double *OGSI::getColSolution() const
-
 {
     /*
       Use the cached solution vector, if present. If we have no constraint system,
       return 0.
     */
-    if (colsol_ != 0) {
-        return (colsol_);
-    }
+    if (colsol_ != 0) return (colsol_);
 
     int numcols = getNumCols();
-    if (numcols == 0) {
-        return (0);
-    }
+    if (numcols == 0) return 0;
 
     colsol_ = new double[numcols];
-    if (redcost_ != 0) delete [] redcost_;
-    {
-        redcost_ = new double[numcols];
-    }
+    if (redcost_ != NULL) delete [] redcost_;
+    redcost_ = new double[numcols];
+    
     /*
       Grab the problem status.
     */
+    
     int probStatus;
-    if (bbWasLast_) {
-        probStatus = glp_mip_status(lp_);
-    } else {
-        probStatus = glp_get_status(lp_);
-    }
+    if (bbWasLast_) probStatus = glp_mip_status(lp_);
+    else            probStatus = glp_get_status(lp_);
+    
     /*
       If the problem hasn't been solved, glpk returns zeros, but OSI requires that
       the solution be within bound. getColLower() will ensure both upper and lower
@@ -1659,16 +1623,14 @@ const double *OGSI::getColSolution() const
       collower[j] < colupper[j]). Solution values will be 0.0 unless that's outside
       the bounds.
     */
+    
     if (probStatus == GLP_UNDEF) {
         getColLower();
         int j;
         for (j = 0; j < numcols; j++) {
             colsol_[j] = 0.0;
-            if (collower_[j] > 0.0) {
-                colsol_[j] = collower_[j];
-            } else if (colupper_[j] < 0.0) {
-                colsol_[j] = colupper_[j];
-            }
+            if (collower_[j] > 0.0)      colsol_[j] = collower_[j];
+            else if (colupper_[j] < 0.0) colsol_[j] = colupper_[j];
         }
     }
     /*
@@ -1679,13 +1641,10 @@ const double *OGSI::getColSolution() const
         int j;
         for (j = 0; j < numcols; j++) {
             colsol_[j] = glp_get_col_prim(lp_,j+1);
-            if (fabs(colsol_[j]) < GlpkZeroTol) {
-                colsol_[j] = 0.0;
-            }
+            if (fabs(colsol_[j]) < GlpkZeroTol) colsol_[j] = 0.0;
+	    
             redcost_[j] = glp_get_col_dual(lp_,j+1);
-            if (fabs(redcost_[j]) < GlpkZeroTol) {
-                redcost_[j] = 0.0;
-            }
+            if (fabs(redcost_[j]) < GlpkZeroTol) redcost_[j] = 0.0;
         }
     }
     /*
@@ -1696,9 +1655,7 @@ const double *OGSI::getColSolution() const
         int j;
         for (j = 0; j < numcols; j++) {
             colsol_[j] = glp_mip_col_val(lp_,j+1);
-            if (fabs(colsol_[j]) < GlpkZeroTol) {
-                colsol_[j] = 0.0;
-            }
+            if (fabs(colsol_[j]) < GlpkZeroTol) colsol_[j] = 0.0;
             redcost_[j] = 0.0;
         }
     }
@@ -1715,20 +1672,15 @@ const double *OGSI::getColSolution() const
 */
 
 const double *OGSI::getRowPrice() const
-
 {
     /*
       If we have a cached solution, use it. If the constraint system is empty,
       return 0. Otherwise, allocate a new vector.
     */
-    if (rowsol_ != 0) {
-        return (rowsol_);
-    }
+    if (rowsol_ != 0) return (rowsol_);
 
     int numrows = getNumRows();
-    if (numrows == 0) {
-        return (0);
-    }
+    if (numrows == 0) return 0;
 
     rowsol_ = new double[numrows];
     /*
@@ -1739,9 +1691,7 @@ const double *OGSI::getRowPrice() const
         int i;
         for (i = 0; i < numrows; i++) {
             rowsol_[i] = glp_get_row_dual(lp_,i+1);
-            if (fabs(rowsol_[i]) < GlpkZeroTol) {
-                rowsol_[i] = 0.0;
-            }
+            if (fabs(rowsol_[i]) < GlpkZeroTol) rowsol_[i] = 0.0;
         }
     } else {
         int i;
@@ -1767,41 +1717,42 @@ const double * OGSI::getReducedCost() const {
     /*
       Return the cached copy, if it exists.
     */
-    if (redcost_ != 0) {
-        return (redcost_);
-    }
+  
+    if (redcost_ != 0) return (redcost_);
+    
     /*
       We need to calculate. Make sure we have a constraint system, then allocate
       a vector and initialise it with the objective coefficients.
     */
+    
     int n = getNumCols();
-    if (n == 0) {
-        return (0);
-    }
+    if (n == 0) return (0);
 
     redcost_ = new double[n];
     CoinDisjointCopyN(getObjCoefficients(),n,redcost_);
+    
     /*
       Try and acquire dual variables.
     */
+    
     const double *y = getRowPrice();
-    if (!y) {
-        return (redcost_);
-    }
+    if (!y) return (redcost_);
+    
     /*
       Acquire the constraint matrix and calculate y*A.
     */
+    
     const CoinPackedMatrix *mtx = getMatrixByCol();
     double *yA = new double[n];
     mtx->transposeTimes(y,yA);
+    
     /*
       Calculate c-yA and remove infinitesimals from the result.
     */
+    
     for (int j = 0; j < n; j++) {
         redcost_[j] -= yA[j];
-        if (fabs(redcost_[j]) < GlpkZeroTol) {
-            redcost_[j] = 0;
-        }
+        if (fabs(redcost_[j]) < GlpkZeroTol) redcost_[j] = 0;
     }
 
     delete[] yA;
@@ -1818,44 +1769,46 @@ const double * OGSI::getReducedCost() const {
 */
 
 const double *OGSI::getRowActivity() const
-
 {
     /*
       Return the cached copy, if it exists.
     */
-    if (rowact_) {
-        return (rowact_);
-    }
+  
+    if (rowact_) return (rowact_);
+    
     /*
       We need to calculate. Make sure we have a constraint system, then allocate
       a vector and initialise it with the objective coefficients.
     */
+    
     int m = getNumRows();
-    if (m == 0) {
-        return (0);
-    }
+    if (m == 0) return (0);
 
     rowact_ = new double[m];
+    
     /*
       Acquire primal variables.
     */
+    
     const double *x = getColSolution();
     if (!x) {
         CoinZeroN(rowact_,m);
         return (rowact_);
     }
+    
     /*
       Acquire the constraint matrix and calculate A*x.
     */
+    
     const CoinPackedMatrix *mtx = getMatrixByRow();
     mtx->times(x,rowact_);
+    
     /*
       Remove infinitesimals from the result.
     */
+    
     for (int i = 0; i < m; i++) {
-        if (fabs(rowact_[i]) < GlpkZeroTol) {
-            rowact_[i] = 0;
-        }
+        if (fabs(rowact_[i]) < GlpkZeroTol) rowact_[i] = 0;
     }
 
     return (rowact_);
@@ -1911,7 +1864,6 @@ std::vector<double*> OGSI::getPrimalRays(int /*maxNumRays*/) const {
 */
 
 void OGSI::setObjCoeff (int j, double cj)
-
 {
     assert(j >= 0 && j < getNumCols());
 
@@ -1919,15 +1871,16 @@ void OGSI::setObjCoeff (int j, double cj)
       Remove the solution. Arguably the only thing that we should remove here is
       the cached reduced cost.
     */
+    
     freeCachedData(OGSI::KEEPCACHED_PROBLEM);
+    
     /*
       Push the changed objective down to glpk.
     */
+    
     glp_set_obj_coef(lp_,j+1,cj);
 
-    if (obj_) {
-        obj_[j] = cj;
-    }
+    if (obj_) obj_[j] = cj;
 
     return;
 }
@@ -1935,7 +1888,6 @@ void OGSI::setObjCoeff (int j, double cj)
 //-----------------------------------------------------------------------------
 
 void OGSI::setColLower (int j, double lbj)
-
 {
     /*
       Get the upper bound, so we can call setColBounds.  glpk reports 0 for an
@@ -1943,8 +1895,8 @@ void OGSI::setColLower (int j, double lbj)
     */
     double inf = getInfinity();
     int type = glp_get_col_type(lp_,j+1);
-    double ubj = glp_get_col_ub(lp_,j+1);
-    if (ubj == +DBL_MAX) ubj = 0.0;
+    double ubj = glp_get_col_ub(lp_,j+1); if (ubj == +DBL_MAX) ubj = 0.0;
+    
     switch (type) {
     case GLP_UP:
     case GLP_DB:
@@ -1961,7 +1913,7 @@ void OGSI::setColLower (int j, double lbj)
     }
     }
 
-# if OGSI_TRACK_FRESH > 0
+#if OGSI_TRACK_FRESH > 0
     /*
       Check if this bound really invalidates the current solution. This check will
       give false positives because OsiGlpk needs a notion of `valid solution from
@@ -1990,16 +1942,16 @@ void OGSI::setColLower (int j, double lbj)
 //-----------------------------------------------------------------------------
 
 void OGSI::setColUpper (int j, double ubj)
-
 {
     /*
       Get the lower bound, so we can call setColBounds.  glpk reports 0 for an
       infinite bound, so we need to check the status and possibly correct.
     */
+  
     double inf = getInfinity();
-    int type = glp_get_col_type(lp_,j+1);
-    double lbj = glp_get_col_lb(lp_,j+1);
-    if (lbj == -DBL_MAX) lbj = 0.0;
+    int type   = glp_get_col_type(lp_,j+1);
+    double lbj = glp_get_col_lb(lp_,j+1); if (lbj == -DBL_MAX) lbj = 0.0;
+    
     switch (type) {
     case GLP_LO:
     case GLP_DB:
@@ -2016,7 +1968,7 @@ void OGSI::setColUpper (int j, double ubj)
     }
     }
 
-# if OGSI_TRACK_FRESH > 0
+#if OGSI_TRACK_FRESH > 0
     /*
       Check if this bound really invalidates the current solution. This check will
       give false positives because OsiGlpk needs a notion of `valid solution from
@@ -2051,16 +2003,19 @@ void OGSI::setColUpper (int j, double ubj)
 */
 
 void OGSI::setColBounds (int j, double lower, double upper)
-
 {
     assert(j >= 0 && j < getNumCols());
+    
     /*
       Free only the cached solution. Keep the cached structural variables.
     */
+    
     freeCachedData(OGSI::KEEPCACHED_PROBLEM);
+    
     /*
       Figure out what type we should use for glpk.
     */
+    
     double inf = getInfinity();
     int type;
 
@@ -2075,22 +2030,22 @@ void OGSI::setColBounds (int j, double lower, double upper)
     } else {
         type = GLP_FR;
     }
+    
     /*
       Push the bound change down into the solver. 1-based addressing.
     */
+    
     int statj = glp_get_col_stat(lp_,j+1);
     glp_set_col_bnds(lp_,j+1,type,lower,upper);
     glp_set_col_stat(lp_,j+1,statj);
     statj = glp_get_col_stat(lp_,j+1);
+    
     /*
       Correct the cached upper and lower bound vectors, if present.
     */
-    if (collower_) {
-        collower_[j] = lower;
-    }
-    if (colupper_) {
-        colupper_[j] = upper;
-    }
+    
+    if (collower_) collower_[j] = lower;
+    if (colupper_) colupper_[j] = upper;
 
     return;
 }
@@ -2105,8 +2060,7 @@ void OGSI::setColSetBounds(const int* indexFirst,
 
 //-----------------------------------------------------------------------------
 
-void
-OGSI::setRowLower(int elementIndex, double elementValue) {
+void OGSI::setRowLower(int elementIndex, double elementValue) {
     // Could be in OsiSolverInterfaceImpl.
     double inf = getInfinity();
 
@@ -2115,9 +2069,9 @@ OGSI::setRowLower(int elementIndex, double elementValue) {
     double ub;
 
     type = glp_get_row_type(getMutableModelPtr(),elementIndex+1);
-    ub = glp_get_row_ub(getMutableModelPtr(),elementIndex+1);
-    if (ub == +DBL_MAX) ub = 0.0;
-    lb = elementValue;
+    ub   = glp_get_row_ub(getMutableModelPtr(),elementIndex+1); if (ub == +DBL_MAX) ub = 0.0;
+    lb   = elementValue;
+    
     switch(type) {
     case GLP_UP:
     case GLP_DB:
@@ -2136,8 +2090,7 @@ OGSI::setRowLower(int elementIndex, double elementValue) {
 }
 
 //-----------------------------------------------------------------------------
-void
-OGSI::setRowUpper(int elementIndex, double elementValue) {
+void OGSI::setRowUpper(int elementIndex, double elementValue) {
     // Could be in OsiSolverInterfaceImpl.
     double inf = getInfinity();
 
@@ -2146,9 +2099,9 @@ OGSI::setRowUpper(int elementIndex, double elementValue) {
     double ub;
 
     type = glp_get_row_type(getMutableModelPtr(),elementIndex+1);
-    lb = glp_get_row_lb(getMutableModelPtr(),elementIndex+1);
-    if (lb == -DBL_MAX) lb = 0.0;
+    lb   = glp_get_row_lb(getMutableModelPtr(),elementIndex+1); if (lb == -DBL_MAX) lb = 0.0;
     ub = elementValue;
+    
     switch(type) {
     case GLP_LO:
     case GLP_DB:
@@ -2163,6 +2116,7 @@ OGSI::setRowUpper(int elementIndex, double elementValue) {
     default:
         assert(false);
     }
+    
     setRowBounds(elementIndex, lb, ub);
 }
 
@@ -2172,49 +2126,42 @@ OGSI::setRowUpper(int elementIndex, double elementValue) {
   As with setColBounds, just changing the bounds should not invalidate the
   current rim vectors.
 */
-
 void OGSI::setRowBounds (int i, double lower, double upper) {
     /*
       Free only the row and column solution, keep the cached structural vectors.
     */
+  
     freeCachedData(OGSI::KEEPCACHED_PROBLEM);
+    
     /*
       Figure out the correct row type for glpk and push the change down into the
       solver. 1-based addressing.
     */
+    
     double inf = getInfinity();
     int type;
 
-    if(lower == upper) {
-        type = GLP_FX;
-    } else if (lower > -inf && upper < inf) {
-        type = GLP_DB;
-    } else if (lower > -inf) {
-        type = GLP_LO;
-    } else if (upper < inf) {
-        type = GLP_UP;
-    } else {
-        type = GLP_FR;
-    }
+    if(lower == upper)                    type = GLP_FX;
+    else if (lower > -inf && upper < inf) type = GLP_DB;
+    else if (lower > -inf)                type = GLP_LO;
+    else if (upper < inf)                 type = GLP_UP;
+    else                                  type = GLP_FR;
 
     glp_set_row_bnds(lp_,i+1,type,lower,upper);
+    
     /*
       Update cached vectors, if they exist.
     */
-    if (rowlower_) {
-        rowlower_[i] = lower;
-    }
-    if (rowupper_) {
-        rowupper_[i] = upper;
-    }
+    
+    if (rowlower_) rowlower_[i] = lower;
+    if (rowupper_) rowupper_[i] = upper;
 
     return;
 }
 
 //-----------------------------------------------------------------------------
 
-void
-OGSI::setRowType(int elementIndex, char sense, double rightHandSide,
+void OGSI::setRowType(int elementIndex, char sense, double rightHandSide,
                  double range) {
     // Could be in OsiSolverInterfaceImpl.
     double lower = 0.0;
@@ -2234,20 +2181,18 @@ void OGSI::setRowSetBounds(const int* indexFirst,
 
 //-----------------------------------------------------------------------------
 
-void
-OGSI::setRowSetTypes(const int* indexFirst,
-                     const int* indexLast,
-                     const char* senseList,
-                     const double* rhsList,
-                     const double* rangeList) {
+void OGSI::setRowSetTypes(const int* indexFirst,
+			  const int* indexLast,
+			  const char* senseList,
+			  const double* rhsList,
+			  const double* rangeList) {
     // Could be in OsiSolverInterface (should'nt be implemeted at here).
     OsiSolverInterface::setRowSetTypes(indexFirst, indexLast, senseList, rhsList, rangeList);
 }
 
 //#############################################################################
 
-void
-OGSI::setContinuous(int index) {
+void OGSI::setContinuous(int index) {
     glp_prob *model = getMutableModelPtr();
     freeCachedData(OGSI::FREECACHED_COLUMN);
     glp_set_col_kind(model, index+1, GLP_CV);
@@ -2256,11 +2201,11 @@ OGSI::setContinuous(int index) {
 //-----------------------------------------------------------------------------
 
 void OGSI::setInteger (int index)
-
 {
     glp_prob *model = getMutableModelPtr();
     freeCachedData(OGSI::FREECACHED_COLUMN);
     glp_set_col_kind(model,index+1,GLP_IV);
+    
     /*
       Temporary hack to correct upper bounds on general integer variables.
       CoinMpsIO insists on forcing a bound of 1e30 for general integer variables
@@ -2270,16 +2215,15 @@ void OGSI::setInteger (int index)
       -- lh, 070530 --
 
       double uj = getColUpper()[index];
-      if (uj >= 1e30)
-      { setColUpper(index,getInfinity()); }
+      if (uj >= 1e30) setColUpper(index,getInfinity());
     */
+    
     return;
 }
 
 //-----------------------------------------------------------------------------
 
-void
-OGSI::setContinuous(const int* indices, int len) {
+void OGSI::setContinuous(const int* indices, int len) {
     // Could be in OsiSolverInterfaceImpl.
     int i;
     for(i = 0; i < len; i++) {
@@ -2289,8 +2233,7 @@ OGSI::setContinuous(const int* indices, int len) {
 
 //-----------------------------------------------------------------------------
 
-void
-OGSI::setInteger(const int* indices, int len) {
+void OGSI::setInteger(const int* indices, int len) {
     // Could be in OsiSolverInterfaceImpl.
     int i;
     for(i = 0; i < len; i++) {
@@ -2305,15 +2248,11 @@ OGSI::setInteger(const int* indices, int len) {
   maximisation is what's desired.
 */
 void OGSI::setObjSense(double s)
-
 {
     freeCachedData(OGSI::FREECACHED_RESULTS);
 
-    if (s <= -1.0) {
-        glp_set_obj_dir(lp_,GLP_MAX);
-    } else {
-        glp_set_obj_dir(lp_,GLP_MIN);
-    }
+    if (s <= -1.0) glp_set_obj_dir(lp_,GLP_MAX);
+    else           glp_set_obj_dir(lp_,GLP_MIN);
 
     return;
 }
@@ -2408,16 +2347,15 @@ void OGSI::addCol (const CoinPackedVectorBase& vec,
             elements_adj[count] = elements[i];
         }
     }
+    
     glp_set_mat_col(model, numcols, count, indices_adj, elements_adj);
+    
     delete [] indices_adj;
     delete [] elements_adj;
 
-# if OGSI_TRACK_FRESH > 2
-    std::cout
-            << "OGSI(" << std::hex << this << std::dec
-            << ")::addCol: new column." << std::endl;
+#if OGSI_TRACK_FRESH > 2
+    std::cout << "OGSI(" << std::hex << this << std::dec << ")::addCol: new column." << std::endl;
 # endif
-
 }
 
 //-----------------------------------------------------------------------------
@@ -2435,8 +2373,7 @@ void OGSI::addCols (const int numcols,
 
 //-----------------------------------------------------------------------------
 
-void
-OGSI::deleteCols(const int num, const int * columnIndices) {
+void OGSI::deleteCols(const int num, const int * columnIndices) {
     int *columnIndicesPlus1 = new int[num+1];
     glp_prob *model = getMutableModelPtr();
     freeCachedData(OGSI::KEEPCACHED_ROW);
@@ -2445,22 +2382,20 @@ OGSI::deleteCols(const int num, const int * columnIndices) {
         columnIndicesPlus1[i+1]=columnIndices[i]+1;
         deleteColNames(columnIndices[i],1);
     }
+    
     glp_del_cols(model,num,columnIndicesPlus1);
+    
     delete [] columnIndicesPlus1;
 
-# if OGSI_TRACK_FRESH > 0
-    std::cout
-            << "OGSI(" << std::hex << this << std::dec
-            << ")::deleteCols: deleted " << num << "columns." << std::endl;
+#if OGSI_TRACK_FRESH > 0
+    std::cout << "OGSI(" << std::hex << this << std::dec << ")::deleteCols: deleted " << num << "columns." << std::endl;
 # endif
-
 }
 
 //-----------------------------------------------------------------------------
 
-void
-OGSI::addRow (const CoinPackedVectorBase& vec,
-              const double rowlb, const double rowub) {
+void OGSI::addRow (const CoinPackedVectorBase& vec,
+		   const double rowlb, const double rowub) {
     // Note: GLPK expects only non-zero coefficients will be given in
     //   glp_set_mat_row and will abort if there are any zeros.  So any
     //   zeros must be removed prior to calling glp_set_mat_row.
@@ -2494,24 +2429,22 @@ OGSI::addRow (const CoinPackedVectorBase& vec,
             indices_adj[count] = indices[i] + 1;
         }
     }
+    
     glp_set_mat_row(model, numrows, count, indices_adj, elements_adj);
+    
     delete [] indices_adj;
     delete [] elements_adj;
 
-# if OGSI_TRACK_FRESH > 0
-    std::cout
-            << "OGSI(" << std::hex << this << std::dec
-            << ")::addRow: new row." << std::endl;
+#if OGSI_TRACK_FRESH > 0
+    std::cout << "OGSI(" << std::hex << this << std::dec << ")::addRow: new row." << std::endl;
 # endif
-
 }
 
 //-----------------------------------------------------------------------------
 
-void
-OGSI::addRow(const CoinPackedVectorBase& vec,
-             const char rowsen, const double rowrhs,
-             const double rowrng) {
+void OGSI::addRow(const CoinPackedVectorBase& vec,
+		  const char rowsen, const double rowrhs,
+		  const double rowrng) {
     // Could be in OsiSolverInterfaceImpl.
     double lb = 0.0;
     double ub = 0.0;
@@ -2521,10 +2454,9 @@ OGSI::addRow(const CoinPackedVectorBase& vec,
 
 //-----------------------------------------------------------------------------
 
-void
-OGSI::addRows(const int numrows,
-              const CoinPackedVectorBase * const * rows,
-              const double* rowlb, const double* rowub) {
+void OGSI::addRows(const int numrows,
+		   const CoinPackedVectorBase * const * rows,
+		   const double* rowlb, const double* rowub) {
     // ??? Could do this more efficiently now
     // Could be in OsiSolverInterfaceImpl.
     int i;
@@ -2534,11 +2466,10 @@ OGSI::addRows(const int numrows,
 
 //-----------------------------------------------------------------------------
 
-void
-OGSI::addRows(const int numrows,
-              const CoinPackedVectorBase * const * rows,
-              const char* rowsen, const double* rowrhs,
-              const double* rowrng) {
+void OGSI::addRows(const int numrows,
+		   const CoinPackedVectorBase * const * rows,
+		   const char* rowsen, const double* rowrhs,
+		   const double* rowrng) {
     // Could be in OsiSolverInterfaceImpl.
     int i;
     for(i = 0; i < numrows; ++i)
@@ -2553,27 +2484,33 @@ OGSI::addRows(const int numrows,
   by the rules and delete only slack constraints. If we delete a constraint
   with a nonbasic slack, we're in trouble.
 */
-void OGSI::deleteRows (const int num, const int *osiIndices)
 
+void OGSI::deleteRows (const int num, const int *osiIndices)
 {
     int *glpkIndices = new int[num+1];
     int i,ndx;
+    
     /*
       Arguably, column results remain valid across row deletion.
     */
+    
     freeCachedData(OGSI::KEEPCACHED_COLUMN);
+    
     /*
       Glpk uses 1-based indexing, so convert the array of indices. While we're
       doing that, delete the row names.
     */
+    
     for (ndx = 0; ndx < num; ndx++) {
         glpkIndices[ndx+1] = osiIndices[ndx]+1;
         deleteRowNames(osiIndices[ndx],1);
     }
+    
     /*
       See if we're about to do damage. If we delete a row with a nonbasic slack,
       we'll have an excess of basic variables.
     */
+    
     int notBasic = 0;
     for (ndx = 1; ndx <= num; ndx++) {
         i = glpkIndices[ndx];
@@ -2583,24 +2520,22 @@ void OGSI::deleteRows (const int num, const int *osiIndices)
         }
     }
     if (notBasic) {
-#  if OGSI_VERBOSITY > 1
-        std::cout
-                << "OGSI(" << std::hex << this << std::dec
-                << ")::deleteRows: deleting " << notBasic << " tight constraints; "
-                << "basis is no longer valid." << std::endl;
-#  endif
+#if OGSI_VERBOSITY > 1
+        std::cout << "OGSI(" << std::hex << this << std::dec << ")::deleteRows: deleting " << notBasic << " tight constraints; "
+		  << "basis is no longer valid." << std::endl;
+#endif
     }
+    
     /*
       Tell glpk to delete the rows.
     */
+    
     glp_del_rows(lp_,num,glpkIndices);
 
     delete [] glpkIndices;
 
-# if OGSI_TRACK_FRESH > 0
-    std::cout
-            << "OGSI(" << std::hex << this << std::dec
-            << ")::deleteRows: deleted " << num << " rows." << std::endl;
+#if OGSI_TRACK_FRESH > 0
+    std::cout << "OGSI(" << std::hex << this << std::dec << ")::deleteRows: deleted " << num << " rows." << std::endl;
 # endif
 
     return;
@@ -2614,13 +2549,11 @@ void OGSI::loadProblem (const CoinPackedMatrix &matrix,
                         const double *collb_parm, const double *colub_parm,
                         const double *obj_parm,
                         const double *rowlb_parm, const double *rowub_parm)
-
 {
-#   if OGSI_TRACK_FRESH > 0
-    std::cout
-            << "OGSI(" << std::hex << this << std::dec << ")::loadProblem."
-            << std::endl;
-#   endif
+#if OGSI_TRACK_FRESH > 0
+    std::cout << "OGSI(" << std::hex << this << std::dec << ")::loadProblem." << std::endl;
+#endif
+    
     /*
       There's always an existing glp_prob object. If it's empty, we can simply load in
       the new data. If it's non-empty, easiest to delete it and start afresh. When
@@ -2629,60 +2562,39 @@ void OGSI::loadProblem (const CoinPackedMatrix &matrix,
 
       In any event, get rid of cached data in the OsiGlpk object.
     */
+    
     if (glp_get_num_cols(lp_) != 0 || glp_get_num_rows(lp_) != 0) {
-        int presolVal = find_cps(lp_)->presol;
-        int usedualVal = find_cps(lp_)->dual;
-        int scaleVal = find_cps(lp_)->scale;
-        int logVal = find_cps(lp_)->msg_lev;
-#   if OGSI_TRACK_FRESH > 0
-        std::cout
-                << "    emptying GLP(" << std::hex << lp_ << std::dec << "), "
-#   endif
-                //  lpx_delete_prob(lp_); // YC
-                struct CPS *cps = find_cps(lp);
-        //if (cps_ptr == cps)
-        //  cps_ptr = cps->link;
-        //else
-        //  {  struct CPS *prev;
-        //    for (prev = cps_ptr; prev != NULL; prev = prev->link)
-        //      if (prev->link == cps) break;
-        //    xassert(prev != NULL);
-        //    prev->link = cps->link;
-        //  }
-        glp_free(cps);
+        int presolVal  = parm_.presolve;
+        int usedualVal = parm_.meth;
+        int scaleVal   = scale_;
+        int logVal     = parm_.msg_lev;
+#if OGSI_TRACK_FRESH > 0
+	std::cout << "    emptying GLP(" << std::hex << lp_ << std::dec << "), "
+#endif
         glp_delete_prob(lp);
-
-        //lp_ = lpx_create_prob();
-        struct CPS *cps;
         lp_ = glp_create_prob();
-        cps = glp_alloc(1, sizeof(struct CPS));
-        cps->lp = lp_;
-        reset_cps(cps);
-        //cps->link = cps_ptr;
-        //cps_ptr = cps;
-
         assert(lp_);
-#   if OGSI_TRACK_FRESH > 0
-        std::cout
-                << "loading GLP(" << std::hex << lp_ << std::dec << ")."
-                << std::endl;
-#   endif
-        find_cps(lp_)->it_lim = maxIteration_;
+#if OGSI_TRACK_FRESH > 0
+        std::cout << "loading GLP(" << std::hex << lp_ << std::dec << ")." << std::endl;
+#endif
+        parm_.it_lim = maxIteration_;
         if (getObjSense() == 1) {			// minimization
-            find_cps(lp_)->obj_ul = dualObjectiveLimit_;
-            find_cps(lp_)->obj_ll = primalObjectiveLimit_;
+            parm_.obj_ul = dualObjectiveLimit_;
+            parm_.obj_ll = primalObjectiveLimit_;
         } else {					// maximization
-            find_cps(lp_)->obj_ll = dualObjectiveLimit_;
-            find_cps(lp_)->obj_ul = primalObjectiveLimit_;
+            parm_.obj_ll = dualObjectiveLimit_;
+            parm_.obj_ul = primalObjectiveLimit_;
         }
-        find_cps(lp_)->tol_dj  = dualTolerance_;
-        find_cps(lp_)->tol_bnd = primalTolerance_;
+        parm_.tol_dj  = dualTolerance_;
+        parm_.tol_bnd = primalTolerance_;
+	
         glp_set_obj_coef(lp_,0,objOffset_);
         glp_set_prob_name(lp_,const_cast<char *>(probName_.c_str()));
-        find_cps(lp_)->presol = presolVal;
-        find_cps(lp_)->dual = usedualVal;
-        find_cps(lp_)->scale = scaleVal;
-        find_cps(lp_)->msg_lev = logVal;
+	
+        parm_.presolve = presolVal;
+        parm_.meth     = usedualVal;
+        scale_         = scaleVal;
+        parm_.msg_lev  = logVal;
         messageHandler()->setLogLevel(logVal);
     }
 
@@ -2694,10 +2606,12 @@ void OGSI::loadProblem (const CoinPackedMatrix &matrix,
     int i,j;
     double *zeroVec,*infVec,*negInfVec;
     const double *collb,*colub,*obj,*rowlb,*rowub;
+    
     /*
       Check if we need default values for any of the vectors, and set up
       accordingly.
     */
+    
     if (collb_parm == 0 || obj_parm == 0) {
         zeroVec = new double [n];
         CoinZeroN(zeroVec,n);
@@ -2755,14 +2669,17 @@ void OGSI::loadProblem (const CoinPackedMatrix &matrix,
     } else {
         rowub = rowub_parm;
     }
+    
     /*
       The actual load.
     */
+    
     if (matrix.isColOrdered()) {
         for (j = 0; j < n; j++) {
             const CoinShallowPackedVector reqdBySunCC = matrix.getVector(j);
             addCol(reqdBySunCC,collb[j],colub[j],obj[j]);
         }
+	
         // Make sure there are enough rows
         if (m > getNumRows()) {
             glp_add_rows(lp_,m-getNumRows());
@@ -2775,6 +2692,7 @@ void OGSI::loadProblem (const CoinPackedMatrix &matrix,
             const CoinShallowPackedVector reqdBySunCC = matrix.getVector(i);
             addRow(reqdBySunCC,rowlb[i],rowub[i]);
         }
+	
         // Make sure there are enough columns
         if (n > getNumCols()) {
             glp_add_cols(lp_,n-getNumCols());
@@ -2784,24 +2702,25 @@ void OGSI::loadProblem (const CoinPackedMatrix &matrix,
             setObjCoeff(j,obj[j]);
         }
     }
+    
     /*
       Cleanup.
     */
-    if (zeroVec) delete[] zeroVec;
-    if (infVec) delete[] infVec;
-    if (negInfVec) delete[] negInfVec;
+    
+    if (zeroVec)   delete [] zeroVec;
+    if (infVec)    delete [] infVec;
+    if (negInfVec) delete [] negInfVec;
 
     return;
 }
 
 //-----------------------------------------------------------------------------
 
-void
-OGSI::assignProblem(CoinPackedMatrix*& matrix,
-                    double*& collb, double*& colub,
-                    double*& obj,
-                    double*& rowlb, double*& rowub) {
-    // Could be in OsiSolverInterfaceImpl.
+void OGSI::assignProblem(CoinPackedMatrix*& matrix,
+			 double*& collb, double*& colub,
+			 double*& obj,
+			 double*& rowlb, double*& rowub) {
+  // Could be in OsiSolverInterfaceImpl.
     loadProblem(*matrix, collb, colub, obj, rowlb, rowub);
     delete matrix;
     matrix = NULL;
@@ -2819,12 +2738,11 @@ OGSI::assignProblem(CoinPackedMatrix*& matrix,
 
 //-----------------------------------------------------------------------------
 
-void
-OGSI::loadProblem(const CoinPackedMatrix& matrix,
-                  const double* collb, const double* colub,
-                  const double* obj,
-                  const char* rowsen, const double* rowrhs,
-                  const double* rowrng) {
+void OGSI::loadProblem(const CoinPackedMatrix& matrix,
+		       const double* collb, const double* colub,
+		       const double* obj,
+		       const char* rowsen, const double* rowrhs,
+		       const double* rowrng) {
     // Could be in OsiSolverInterfaceImpl.
     int numrows = matrix.getNumRows();
     double * rowlb = new double[numrows];
@@ -2839,18 +2757,18 @@ OGSI::loadProblem(const CoinPackedMatrix& matrix,
     }
 
     loadProblem(matrix, collb, colub, obj, rowlb, rowub);
+    
     delete [] rowlb;
     delete [] rowub;
 }
 
 //-----------------------------------------------------------------------------
 
-void
-OGSI::assignProblem(CoinPackedMatrix*& matrix,
-                    double*& collb, double*& colub,
-                    double*& obj,
-                    char*& rowsen, double*& rowrhs,
-                    double*& rowrng) {
+void OGSI::assignProblem(CoinPackedMatrix*& matrix,
+			 double*& collb, double*& colub,
+			 double*& obj,
+			 char*& rowsen, double*& rowrhs,
+			 double*& rowrng) {
     // Could be in OsiSolverInterfaceImpl.
     loadProblem(*matrix, collb, colub, obj, rowsen, rowrhs, rowrng);
     delete matrix;
@@ -2868,31 +2786,29 @@ OGSI::assignProblem(CoinPackedMatrix*& matrix,
     delete[] rowrng;
     rowrng = NULL;
 }
+
 //-----------------------------------------------------------------------------
 
-void
-OGSI::loadProblem(const int numcols, const int numrows,
-                  const int* start, const int* index,
-                  const double* value,
-                  const double* collb, const double* colub,
-                  const double* obj,
-                  const double* rowlb, const double* rowub) {
+void OGSI::loadProblem(const int numcols, const int numrows,
+		       const int* start, const int* index,
+		       const double* value,
+		       const double* collb, const double* colub,
+		       const double* obj,
+		       const double* rowlb, const double* rowub) {
     freeCachedData(OGSI::KEEPCACHED_NONE);
     glp_prob *model = getMutableModelPtr();
     double inf = getInfinity();
 
     // Can't send 0 to glp_add_xxx
-    if (numcols > 0)
-        glp_add_cols(model, numcols);
-    if (numrows > 0)
-        glp_add_rows(model, numrows);
+    if (numcols > 0) glp_add_cols(model, numcols);
+    if (numrows > 0) glp_add_rows(model, numrows);
 
     // How many elements?  Column-major, so indices of start are columns
     int numelem = start[ numcols ];
     //  int numelem = 0;
     //  while (index[numelem] != 0)
     //    numelem++;
-    int *index_adj = new int[1+numelem];
+    int *index_adj    = new int[1+numelem];
     double *value_adj = new double[1+numelem];
 
     int i;
@@ -2903,7 +2819,7 @@ OGSI::loadProblem(const int numcols, const int numrows,
 
     for(i = 0; i < numcols; i++) {
         setColBounds(i, collb ? collb[i]:0.0,
-                     colub ? colub[i]:inf);
+                                colub ? colub[i]:inf);
         set_set_mat_col(model, i+1, start[i+1]-start[i], &(index_adj[start[i]]), &(value_adj[start[i]]));
         setObjCoeff(i, obj ? obj[i]:0.0);
     }
@@ -2916,27 +2832,26 @@ OGSI::loadProblem(const int numcols, const int numrows,
     delete [] value_adj;
 
 }
+
 //-----------------------------------------------------------------------------
 
-void
-OGSI::loadProblem(const int numcols, const int numrows,
-                  const int* start, const int* index,
-                  const double* value,
-                  const double* collb, const double* colub,
-                  const double* obj,
-                  const char* rowsen, const double* rowrhs,
-                  const double* rowrng) {
+void OGSI::loadProblem(const int numcols, const int numrows,
+		       const int* start, const int* index,
+		       const double* value,
+		       const double* collb, const double* colub,
+		       const double* obj,
+		       const char* rowsen, const double* rowrhs,
+		       const double* rowrng) {
     double * rowlb = new double[numrows];
     double * rowub = new double[numrows];
     for (int i = numrows-1; i >= 0; --i) {
         convertSenseToBound(rowsen != NULL ? rowsen[i] : 'G', rowrhs != NULL ? rowrhs[i] : 0.0, rowrng != NULL ? rowrng[i] : 0.0, rowlb[i], rowub[i]);
     }
 
-    loadProblem(numcols, numrows, start, index, value, collb, colub, obj,
-                rowlb, rowub);
+    loadProblem(numcols, numrows, start, index, value, collb, colub, obj, rowlb, rowub);
 
-    delete[] rowlb;
-    delete[] rowub;
+    delete [] rowlb;
+    delete [] rowub;
 }
 
 //-----------------------------------------------------------------------------
@@ -2947,9 +2862,7 @@ OGSI::loadProblem(const int numcols, const int numrows,
   Call OSI::readMps, which will parse the mps file and call
   OsiGlpk::loadProblem.
 */
-int OGSI::readMps (const char *filename,
-                   const char *extension) {
-
+int OGSI::readMps (const char *filename, const char *extension) {
     int retval = OsiSolverInterface::readMps(filename,extension);
 
     return (retval);
@@ -2975,8 +2888,7 @@ void OGSI::writeMps(const char * filename,
     std::string e(extension);
     std::string fullname = f + "." + e;
 
-    OsiSolverInterface::writeMpsNative(fullname.c_str(),
-                                       NULL, NULL, 0, 2, objSense);
+    OsiSolverInterface::writeMpsNative(fullname.c_str(), NULL, NULL, 0, 2, objSense);
 #endif
 }
 
@@ -2998,17 +2910,16 @@ glp_prob * OGSI::getModelPtr () {
 // Default Constructor
 //-----------------------------------------------------------------------------
 
-OGSI::OsiGlpkSolverInterface ()
-    :
-    OsiSolverInterface() {
+OGSI::OsiGlpkSolverInterface() : OsiSolverInterface() {
     gutsOfConstructor();
     incrementInstanceCounter();
-
-# if OGSI_TRACK_SOLVERS > 0
-    std::cout
-            << "OGSI(" << std::hex << this << std::dec
-            << "): default constructor." << std::endl;
-# endif
+    
+    glp_init_scmp(&parm_);
+    scale_ = 0;
+    
+#if OGSI_TRACK_SOLVERS > 0
+    std::cout << "OGSI(" << std::hex << this << std::dec << "): default constructor." << std::endl;
+#endif
 }
 
 //-----------------------------------------------------------------------------
@@ -3016,32 +2927,25 @@ OGSI::OsiGlpkSolverInterface ()
 //-----------------------------------------------------------------------------
 
 OsiSolverInterface * OGSI::clone(bool copyData) const {
-# if OGSI_TRACK_SOLVERS > 0
-    std::cout
-            << "OGSI(" << std::hex << this << std::dec << "): cloning." << std::endl;
-# endif
-    if (copyData)
-        return(new OsiGlpkSolverInterface(*this));
-    else
-        return(new OsiGlpkSolverInterface());
+#if OGSI_TRACK_SOLVERS > 0
+    std::cout << "OGSI(" << std::hex << this << std::dec << "): cloning." << std::endl;
+#endif
+    if (copyData) return(new OsiGlpkSolverInterface(*this));
+    else          return(new OsiGlpkSolverInterface());
 }
 
 //-----------------------------------------------------------------------------
 // Copy constructor
 //-----------------------------------------------------------------------------
 
-OGSI::OsiGlpkSolverInterface(const OsiGlpkSolverInterface & source)
-    :
-    OsiSolverInterface(source) {
+OGSI::OsiGlpkSolverInterface(const OsiGlpkSolverInterface & source) : OsiSolverInterface(source) {
     gutsOfConstructor();
     gutsOfCopy(source);
     incrementInstanceCounter();
-
-# if OGSI_TRACK_SOLVERS > 0
-    std::cout
-            << "OGSI(" << std::hex << this << "): copy from "
-            << &source << std::dec << "." << std::endl;
-# endif
+    
+#if OGSI_TRACK_SOLVERS > 0
+    std::cout << "OGSI(" << std::hex << this << "): copy from " << &source << std::dec << "." << std::endl;
+#endif
 }
 
 //-----------------------------------------------------------------------------
@@ -3052,11 +2956,9 @@ OGSI::~OsiGlpkSolverInterface () {
     gutsOfDestructor();
     decrementInstanceCounter();
 
-# if OGSI_TRACK_SOLVERS > 0
-    std::cout
-            << "OGSI(" << std::hex << this << std::dec
-            << "): destructor." << std::endl;
-# endif
+#if OGSI_TRACK_SOLVERS > 0
+    std::cout << "OGSI(" << std::hex << this << std::dec << "): destructor." << std::endl;
+#endif
 }
 
 // Resets
@@ -3066,16 +2968,12 @@ void OGSI::reset() {
     gutsOfDestructor();
     gutsOfConstructor();
 
-# if OGSI_TRACK_SOLVERS > 0
-    std::cout
-            << "OGSI(" << std::hex << this << std::dec
-            << "): reset." << std::endl;
-# endif
+#if OGSI_TRACK_SOLVERS > 0
+    std::cout << "OGSI(" << std::hex << this << std::dec << "): reset." << std::endl;
+#endif
 
     return;
-
 }
-
 
 //-----------------------------------------------------------------------------
 // Assignment operator
@@ -3090,11 +2988,9 @@ OsiGlpkSolverInterface& OGSI::operator=(const OsiGlpkSolverInterface& rhs) {
             gutsOfCopy(rhs);
     }
 
-# if OGSI_TRACK_SOLVERS > 0
-    std::cout
-            << "OGSI(" << std::hex << this << "): assign from "
-            << &rhs << std::dec << "." << std::endl;
-# endif
+#if OGSI_TRACK_SOLVERS > 0
+    std::cout << "OGSI(" << std::hex << this << "): assign from " << &rhs << std::dec << "." << std::endl;
+#endif
 
     return *this;
 }
@@ -3124,44 +3020,37 @@ void OGSI::applyColCut(const OsiColCut & cc) {
     int type;
     // lower bounds
     for(i = 0; i < lbs.getNumElements(); ++i) {
-        int column = lbs.getIndices()[i];
+        int column   = lbs.getIndices()[i];
         double lower = lbs.getElements()[i];
         double upper = colUb[column];
+	
         if(lower > colLb[column]) {
             // update cached version as well
             collower_[column] = lower;
-            if(lower == upper)
-                type = GLP_FX;
-            else if(lower > -inf && upper < inf)
-                type = GLP_DB;
-            else if(lower > -inf)
-                type = GLP_LO;
-            else if(upper < inf)
-                type = GLP_UP;
-            else
-                type = GLP_FR;
+            if(lower == upper)                   type = GLP_FX;
+            else if(lower > -inf && upper < inf) type = GLP_DB;
+            else if(lower > -inf)                type = GLP_LO;
+            else if(upper < inf)                 type = GLP_UP;
+            else                                 type = GLP_FR;
 
             glp_set_col_bnds(getMutableModelPtr(), column+1, type, lower, upper);
         }
     }
+    
     // lower bounds
     for(i = 0; i < ubs.getNumElements(); ++i) {
-        int column = ubs.getIndices()[i];
+        int column   = ubs.getIndices()[i];
         double upper = ubs.getElements()[i];
         double lower = colLb[column];
+	
         if(upper < colUb[column]) {
             // update cached version as well
             colupper_[column] = upper;
-            if(lower == upper)
-                type = GLP_FX;
-            else if(lower > -inf && upper < inf)
-                type = GLP_DB;
-            else if(lower > -inf)
-                type = GLP_LO;
-            else if(upper < inf)
-                type = GLP_UP;
-            else
-                type = GLP_FR;
+            if(lower == upper)                   type = GLP_FX;
+            else if(lower > -inf && upper < inf) type = GLP_DB;
+            else if(lower > -inf)                type = GLP_LO;
+            else if(upper < inf)                 type = GLP_UP;
+            else                                 type = GLP_FR;
 
             glp_set_col_bnds(getMutableModelPtr(), column+1, type, lower, upper);
         }
@@ -3189,19 +3078,22 @@ glp_prob * OGSI::getMutableModelPtr(void) const {
 */
 
 void OGSI::gutsOfCopy (const OsiGlpkSolverInterface &source)
-
 {
-    glp_prob *srclpx = source.lp_;
-    glp_prob *lpx = lp_;
+    glp_prob *srclpx  = source.lp_;
+    glp_smcp srcparmx = soource.parm_;
+    glp_prob *lpx     = lp_;
+    glp_smcp parmx    = parm_;
     double dblParam;
     int intParam;
     std::string strParam;
+    
     /*
       Copy information from the source OSI that a user might change before
       loading a problem: objective sense and offset, other OSI parameters.  Use
       the get/set parameter calls here to hide pushing information into the glp_prob
       object.
     */
+    
     setObjSense(source.getObjSense());
     source.getDblParam(OsiObjOffset,dblParam);
     setDblParam(OsiObjOffset,dblParam);
@@ -3222,6 +3114,7 @@ void OGSI::gutsOfCopy (const OsiGlpkSolverInterface &source)
     setDblParam(OsiPrimalTolerance,dblParam);
     source.getDblParam(OsiDualTolerance,dblParam);
     setDblParam(OsiDualTolerance,dblParam);
+    
     /*
       For hints, we need to be a little more circumspect, so as not to pump out a
       bunch of warnings. Pull parameters from the source glp_prob object and load into
@@ -3229,18 +3122,22 @@ void OGSI::gutsOfCopy (const OsiGlpkSolverInterface &source)
       held up on the parent OSI object, so we don't need to worry about copying
       them.
     */
-    intParam = find_cps(srclpx)->presol;
-    find_cps(lpx)->presol = intParam;
-    intParam = find_cps(srclpx)->dual;
-    find_cps(lpx)->dual = intParam;
-    intParam = find_cps(srclpx)->scale;
-    find_cps(lpx)->scale = intParam;
+    
+    intParam       = srcparmx.presolve;
+    parmx.presolve = intParam;
+    intParam       = srcparmx.meth;
+    lpx.math       = intParam;
+    intParam       = srclpx.scale_;
+    lpx.scale_     = intParam;
+    
     /*
       Printing is a bit more complicated. Pull the parameter and set the log
       level in the message handler and set the print parameter in glpk.
     */
-    intParam = find_cps(srclpx)->msg_lev;
-    find_cps(lpx)->msg_lev = intParam;
+    
+    intParam     = srcparmx.msg_lev;
+    parmxmsg_lev = intParam;
+    
     messageHandler()->setLogLevel(intParam);
 
 # ifdef LPX_K_USECUTS
@@ -3255,18 +3152,19 @@ void OGSI::gutsOfCopy (const OsiGlpkSolverInterface &source)
     int m = source.getNumRows();
     assert(m >= 0 && n >= 0);
     if (m == 0 && n == 0) {
-#   if OGSI_TRACK_SOLVERS > 0
-        std::cout
-                << "    no problem loaded." << std::endl;
-#   endif
+#if OGSI_TRACK_SOLVERS > 0
+        std::cout << "    no problem loaded." << std::endl;
+#endif
         return;
     }
+    
     /*
       We have rows and/or columns, so we need to transfer the problem. Do a few
       parameters and status fields that may have changed if a problem is loaded.
       Then pull the problem information and load it into the glp_prob object for this
       OSI. Information on integrality must be copied over separately.
     */
+    
     source.getStrParam(OsiProbName,strParam);
     setStrParam(OsiProbName,strParam);
     bbWasLast_ = source.bbWasLast_;
@@ -3278,21 +3176,23 @@ void OGSI::gutsOfCopy (const OsiGlpkSolverInterface &source)
     const double *ub = source.getColUpper();
     const double *rlb = source.getRowLower();
     const double *rub = source.getRowUpper();
+    
     loadProblem(*cols,lb,ub,obj,rlb,rub);
 
     int i,j;
     for (j = 0; j < n; j++) {
-        if (source.isInteger(j)) {
-            setInteger(j);
-        }
+        if (source.isInteger(j)) setInteger(j);
     }
+    
     /*
       Copy the solution information. We need to be a bit careful here. Even though
       the source has something loaded as a problem, there's no guarantee that we've
       even called glpk, so we can't consult glpk directly for solution values.
     */
+    
     setColSolution(source.getColSolution());
     setRowPrice(source.getRowPrice());
+    
     /*
       We can, however, consult it directly for variable status: glpk initialises
       this information as soon as columns and/or rows are created. Of course, that
@@ -3300,6 +3200,7 @@ void OGSI::gutsOfCopy (const OsiGlpkSolverInterface &source)
       nonsense, then don't bother. Once we've copied the status into the new glp_prob
       object, do the warm-up.
     */
+    
     if (glp_get_status(srclpx) != GLP_UNDEF) {
         for (j = 1; j <= n; j++) {
             int statj = glp_get_col_stat(srclpx,j);
@@ -3313,87 +3214,77 @@ void OGSI::gutsOfCopy (const OsiGlpkSolverInterface &source)
 #ifndef NDEBUG
         int retval = glp_warm_up(lpx);
 #endif
-#   if OGSI_TRACK_SOLVERS > 1
-        std::cout
-                << "    glp_warm_up returns " << retval << "." << std::endl;
-#   endif
+#if OGSI_TRACK_SOLVERS > 1
+        std::cout << "    glp_warm_up returns " << retval << "." << std::endl;
+#endif
         assert(retval == 0);
     }
 
     return;
 }
 
-
 //-----------------------------------------------------------------------------
 
 void OGSI::gutsOfConstructor() {
-    bbWasLast_ = 0;
-    iter_used_ = 0;
-    obj_ = NULL;
-    collower_ = NULL;
-    colupper_ = NULL;
-    ctype_ = NULL;
-    rowsense_ = NULL;
-    rhs_ = NULL;
-    rowrange_ = NULL;
-    rowlower_ = NULL;
-    rowupper_ = NULL;
-    colsol_ = NULL;
-    rowsol_ = NULL;
-    redcost_ = NULL;
-    rowact_ = NULL;
+    bbWasLast_   = 0;
+    iter_used_   = 0;
+    obj      _   = NULL;
+    collower_    = NULL;
+    colupper_    = NULL;
+    ctype_       = NULL;
+    rowsense_    = NULL;
+    rhs_         = NULL;
+    rowrange_    = NULL;
+    rowlower_    = NULL;
+    rowupper_    = NULL;
+    colsol_      = NULL;
+    rowsol_      = NULL;
+    redcost_     = NULL;
+    rowact_      = NULL;
     matrixByRow_ = NULL;
     matrixByCol_ = NULL;
 
-    maxIteration_ = COIN_INT_MAX;
+    maxIteration_         = COIN_INT_MAX;
     hotStartMaxIteration_ = 0;
-    nameDisc_ = 0;
+    nameDisc_             = 0;
 
-    dualObjectiveLimit_ = getInfinity();
+    dualObjectiveLimit_   = getInfinity();
     primalObjectiveLimit_ = -getInfinity();
-    dualTolerance_ = 1.0e-6;
-    primalTolerance_ = 1.0e-6;
-    objOffset_ = 0.0;
+    dualTolerance_        = 1.0e-6;
+    primalTolerance_      = 1.0e-6;
+    objOffset_            = 0.0;
 
     probName_ = "<none loaded>";
 
-    hotStartCStat_ = NULL;
+    hotStartCStat_     = NULL;
     hotStartCStatSize_ = 0;
-    hotStartRStat_ = NULL;
+    hotStartRStat_     = NULL;
     hotStartRStatSize_ = 0;
 
     isIterationLimitReached_ = false;
-    isTimeLimitReached_ = false;
-    isAbandoned_ = false;
-    isPrimInfeasible_ = false;
-    isDualInfeasible_ = false;
-    isObjLowerLimitReached_ = false;
-    isObjUpperLimitReached_ = false;
-    isFeasible_ = false;
+    isTimeLimitReached_      = false;
+    isAbandoned_             = false;
+    isPrimInfeasible_        = false;
+    isDualInfeasible_        = false;
+    isObjLowerLimitReached_  = false;
+    isObjUpperLimitReached_  = false;
+    isFeasible_              = false;
 
-    //YC lp_ = lpx_create_prob();
-    struct CPS *cps;
     lp_ = glp_create_prob();
-    cps = glp_alloc(1, sizeof(struct CPS));
-    cps->lp = lp_;
-    reset_cps(cps);
-    //cps->link = cps_ptr;
-    //cps_ptr = cps;
-
     assert(lp_ != NULL);
 
     // Push OSI parameters down into glp_prob object.
-    find_cps(lp_)->it_lim = maxIteration_;
+    parm_.it_lim = maxIteration_;
 
     if (getObjSense() == 1.0) {			// minimization
-        find_cps(lp_)->obj_ul = dualObjectiveLimit_;
-        find_cps(lp_)->obj_ll = primalObjectiveLimit_;
+        parm_.obj_ul = dualObjectiveLimit_;
+        parm_.obj_ll = primalObjectiveLimit_;
     } else {					// maximization
-        find_cps(lp_)->obj_ll = dualObjectiveLimit_;
-        find_cps(lp_)->obj_ul = -primalObjectiveLimit_;
+        parm_.obj_ll = dualObjectiveLimit_;
+        parm_.obj_ul = -primalObjectiveLimit_;
     }
-    find_cps(lp_)->tol_dj = dualTolerance_;
-    find_cps(lp_)->tol_bnd = primalTolerance_;
+    parm_.tol_dj = dualTolerance_;
+    parm_.tol_bnd = primalTolerance_;
 
     glp_set_obj_coef(lp_,0,objOffset_);
     glp_set_prob_name(lp_,const_cast<char *>(probName_.c_str()));
@@ -3402,14 +3293,14 @@ void OGSI::gutsOfConstructor() {
        take very long or get into a cycle.
        Thus, let's try to leave parameters onto their defaults.
     */
-//  find_cps(lp_)->presol = 0;
-//  find_cps(lp_)->dual = 1;
-//  find_cps(lp_)->scale = 3;
+//  parm_.presolve = 0;
+//  parm_.meth     = GLP_DUAL;
+//  this->scale_   = 3;
     /*
       Printing is a bit more complicated. Set the log level in the handler and set
       the print parameter in glpk.
     */
-    find_cps(lp_)->msg_lev = 1;
+    parm_.msg_lev = 1;
     messageHandler()->setLogLevel(1);
 
     /*
@@ -3431,20 +3322,7 @@ void OGSI::gutsOfConstructor() {
 
 void OGSI::gutsOfDestructor() {
     if(lp_ != NULL) {
-        struct CPS *cps = find_cps(lp_);
-        //if (cps_ptr == cps)
-        //    cps_ptr = cps->link;
-        //else
-        //  {
-        //    struct CPS *prev;
-        //    for (prev = cps_ptr; prev != NULL; prev = prev->link)
-        //      if (prev->link == cps) break;
-        //    xassert(prev != NULL);
-        //    prev->link = cps->link;
-        //  }
-        glp_free(cps);
         glp_delete_prob(lp_);
-
         lp_ = NULL;
         freeAllMemory();
     }
@@ -3475,8 +3353,8 @@ void OGSI::freeCachedColRim() {
     delete [] obj_;
     delete [] collower_;
     delete [] colupper_;
-    ctype_ = NULL;
-    obj_ = NULL;
+    ctype_    = NULL;
+    obj_      = NULL;
     collower_ = NULL;
     colupper_ = NULL;
 }
@@ -3490,7 +3368,7 @@ void OGSI::freeCachedRowRim() {
     delete [] rowlower_;
     delete [] rowupper_;
     rowsense_ = NULL;
-    rhs_ = NULL;
+    rhs_      = NULL;
     rowrange_ = NULL;
     rowlower_ = NULL;
     rowupper_ = NULL;
@@ -3508,45 +3386,42 @@ void OGSI::freeCachedMatrix() {
 //-----------------------------------------------------------------------------
 
 void OGSI::freeCachedResults() {
-    iter_used_ = 0;
-    isAbandoned_ = false;
+    iter_used_               = 0;
+    isAbandoned_             = false;
     isIterationLimitReached_ = false;
-    isTimeLimitReached_ = false;
-    isPrimInfeasible_ = false;
-    isDualInfeasible_ = false;
-    isFeasible_ = false;
+    isTimeLimitReached_      = false;
+    isPrimInfeasible_        = false;
+    isDualInfeasible_        = false;
+    isFeasible_              = false;
     delete [] colsol_;
     delete [] rowsol_;
     delete [] redcost_;
     delete [] rowact_;
-    colsol_ = NULL;
-    rowsol_ = NULL;
+    colsol_  = NULL;
+    rowsol_  = NULL;
     redcost_ = NULL;
-    rowact_ = NULL;
+    rowact_  = NULL;
 }
 
 //-----------------------------------------------------------------------------
 
 void OGSI::freeCachedData(int keepCached) {
-    if(!(keepCached & OGSI::KEEPCACHED_COLUMN))
-        freeCachedColRim();
-    if(!(keepCached & OGSI::KEEPCACHED_ROW))
-        freeCachedRowRim();
-    if(!(keepCached & OGSI::KEEPCACHED_MATRIX))
-        freeCachedMatrix();
-    if(!(keepCached & OGSI::KEEPCACHED_RESULTS))
-        freeCachedResults();
+    if(!(keepCached & OGSI::KEEPCACHED_COLUMN))  freeCachedColRim();
+    if(!(keepCached & OGSI::KEEPCACHED_ROW))     freeCachedRowRim();
+    if(!(keepCached & OGSI::KEEPCACHED_MATRIX))  freeCachedMatrix();
+    if(!(keepCached & OGSI::KEEPCACHED_RESULTS)) freeCachedResults();
 }
 
 //-----------------------------------------------------------------------------
 
 void OGSI::freeAllMemory() {
     freeCachedData(OGSI::KEEPCACHED_NONE);
+    
     delete[] hotStartCStat_;
     delete[] hotStartRStat_;
-    hotStartCStat_ = NULL;
+    hotStartCStat_     = NULL;
     hotStartCStatSize_ = 0;
-    hotStartRStat_ = NULL;
+    hotStartRStat_     = NULL;
     hotStartRStatSize_ = 0;
 }
 
@@ -3556,7 +3431,6 @@ void OGSI::freeAllMemory() {
   Set the objective function name.
 */
 void OGSI::setObjName (std::string name)
-
 {
     OsiSolverInterface::setObjName(name);
     glp_set_obj_name(lp_,const_cast<char *>(name.c_str()));
@@ -3566,25 +3440,25 @@ void OGSI::setObjName (std::string name)
   Set a row name. Make sure both glpk and OSI see the same name.
 */
 void OGSI::setRowName (int ndx, std::string name)
-
 {
     int nameDiscipline;
     /*
       Quietly do nothing if the index is out of bounds.
     */
-    if (ndx < 0 || ndx >= getNumRows()) {
-        return;
-    }
+    
+    if (ndx < 0 || ndx >= getNumRows()) return;
+    
     /*
       Get the name discipline. Quietly do nothing if it's auto.
     */
+    
     (void) getIntParam(OsiNameDiscipline,nameDiscipline);
-    if (nameDiscipline == 0) {
-        return;
-    }
+    if (nameDiscipline == 0) return;
+    
     /*
       Set the name in the OSI base, then in the consys structure.
     */
+    
     OsiSolverInterface::setRowName(ndx,name);
     glp_set_row_name(lp_,ndx+1,const_cast<char *>(name.c_str()));
 
@@ -3595,31 +3469,30 @@ void OGSI::setRowName (int ndx, std::string name)
   Set a column name. Make sure both glpk and OSI see the same name.
 */
 void OGSI::setColName (int ndx, std::string name)
-
 {
     int nameDiscipline;
     /*
       Quietly do nothing if the index is out of bounds.
     */
-    if (ndx < 0 || ndx >= getNumCols()) {
-        return;
-    }
+    
+    if (ndx < 0 || ndx >= getNumCols()) return;
+    
     /*
       Get the name discipline. Quietly do nothing if it's auto.
     */
+    
     (void) getIntParam(OsiNameDiscipline,nameDiscipline);
-    if (nameDiscipline == 0) {
-        return;
-    }
+    if (nameDiscipline == 0) return;
+    
     /*
       Set the name in the OSI base, then in the consys structure.
     */
+    
     OsiSolverInterface::setColName(ndx,name);
     glp_set_col_name(lp_,ndx+1,const_cast<char *>(name.c_str()));
 
     return;
 }
-
 
 //-----------------------------------------------------------------------------
 
@@ -3627,6 +3500,5 @@ unsigned int OsiGlpkSolverInterface::numInstances_ = 0;
 
 void OsiGlpkSolverInterface::decrementInstanceCounter() {
     assert(numInstances_ != 0);
-    if (--numInstances_ == 0)
-        glp_free_env();
+    if (--numInstances_ == 0) glp_free_env();
 }

@@ -114,7 +114,7 @@ public:
       to provide a way to give a client a warm start basis object of the
       appropriate type, which can resized and modified as desired.
     */
-    inline CoinWarmStart *getEmptyWarmStart () const {
+    inline CoinWarmStart *getEmptyWarmStart() const {
         return (dynamic_cast<CoinWarmStart *>(new CoinWarmStartBasis())) ;
     }
     /// Get warmstarting information
@@ -275,8 +275,7 @@ public:
         It is the user's responsibility to free the double pointers in the
         vector using delete[].
     */
-    virtual std::vector<double*> getDualRays(int maxNumRays,
-            bool fullRay=false) const;
+    virtual std::vector<double*> getDualRays(int maxNumRays, bool fullRay=false) const;
     /** Get as many primal rays as the solver can provide. (In case of proven
         dual infeasibility there should be at least one.)
 
@@ -299,8 +298,7 @@ public:
 #if 0
     /** Get vector of indices of solution which are integer variables
     presently at fractional values */
-    virtual OsiVectorInt getFractionalIndices(const double etol=1.e-05)
-    const;
+    virtual OsiVectorInt getFractionalIndices(const double etol=1.e-05) const;
 #endif
     //@}
     //@}
@@ -313,23 +311,22 @@ public:
     /**@name Changing bounds on variables and constraints */
     //@{
     /** Set an objective function coefficient */
-    virtual void setObjCoeff( int elementIndex, double elementValue );
+    virtual void setObjCoeff(int elementIndex, double elementValue);
 
     using OsiSolverInterface::setColLower ;
     /** Set a single column lower bound<br>
       Use -COIN_DBL_MAX for -infinity. */
-    virtual void setColLower( int elementIndex, double elementValue );
+    virtual void setColLower(int elementIndex, double elementValue);
 
     using OsiSolverInterface::setColUpper ;
     /** Set a single column upper bound<br>
       Use COIN_DBL_MAX for infinity. */
-    virtual void setColUpper( int elementIndex, double elementValue );
+    virtual void setColUpper(int elementIndex, double elementValue);
 
     /** Set a single column lower and upper bound<br>
       The default implementation just invokes setColLower() and
       setColUpper() */
-    virtual void setColBounds( int elementIndex,
-                               double lower, double upper );
+    virtual void setColBounds(int elementIndex, double lower, double upper);
 
     /** Set the bounds on a number of columns simultaneously<br>
       The default implementation just invokes setColLower() and
@@ -344,44 +341,38 @@ public:
                                  const double* boundList);
 
     /** Set a single row lower bound<br>
-      Use -COIN_DBL_MAX for -infinity. */
-    virtual void setRowLower( int elementIndex, double elementValue );
+	Use -COIN_DBL_MAX for -infinity. */
+    virtual void setRowLower(int elementIndex, double elementValue);
 
     /** Set a single row upper bound<br>
-      Use COIN_DBL_MAX for infinity. */
-    virtual void setRowUpper( int elementIndex, double elementValue );
+	Use COIN_DBL_MAX for infinity. */
+    virtual void setRowUpper(int elementIndex, double elementValue);
 
     /** Set a single row lower and upper bound<br>
-      The default implementation just invokes setRowLower() and
-      setRowUpper() */
-    virtual void setRowBounds( int elementIndex,
-                               double lower, double upper );
+	The default implementation just invokes setRowLower() and setRowUpper() */
+    virtual void setRowBounds(int elementIndex, double lower, double upper);
 
     /** Set the type of a single row<br> */
-    virtual void setRowType(int index, char sense, double rightHandSide,
-                            double range);
+    virtual void setRowType(int index, char sense, double rightHandSide, double range);
 
     /** Set the bounds on a number of rows simultaneously<br>
-      The default implementation just invokes setRowLower() and
-      setRowUpper() over and over again.
-      @param indexFirst,indexLast pointers to the beginning and after the
-           end of the array of the indices of the constraints whose
-     <em>either</em> bound changes
-      @param boundList the new lower/upper bound pairs for the constraints
+	The default implementation just invokes setRowLower() and
+	setRowUpper() over and over again.
+	@param indexFirst,indexLast pointers to the beginning and after the
+	end of the array of the indices of the constraints whose <em>either</em> bound changes
+	@param boundList the new lower/upper bound pairs for the constraints
     */
     virtual void setRowSetBounds(const int* indexFirst,
                                  const int* indexLast,
                                  const double* boundList);
 
     /** Set the type of a number of rows simultaneously<br>
-      The default implementation just invokes setRowType()
-      over and over again.
-      @param indexFirst,indexLast pointers to the beginning and after the
-           end of the array of the indices of the constraints whose
-     <em>any</em> characteristics changes
-      @param senseList the new senses
-      @param rhsList   the new right hand sides
-      @param rangeList the new ranges
+	The default implementation just invokes setRowType() over and over again.
+	@param indexFirst,indexLast pointers to the beginning and after the
+	end of the array of the indices of the constraints whose <em>any</em> characteristics changes
+	@param senseList the new senses
+	@param rhsList   the new right hand sides
+	@param rangeList the new ranges
     */
     virtual void setRowSetTypes(const int* indexFirst,
                                 const int* indexLast,
@@ -480,28 +471,20 @@ public:
     // ??? implemented in OsiSolverInterface
     //-----------------------------------------------------------------------
     /** Apply a collection of cuts.<br>
-      Only cuts which have an <code>effectiveness >= effectivenessLb</code>
-      are applied.
+      Only cuts which have an <code>effectiveness >= effectivenessLb</code> are applied.
       <ul>
-        <li> ReturnCode.numberIneffective() -- number of cuts which were
-               not applied because they had an
-             <code>effectiveness < effectivenessLb</code>
+        <li> ReturnCode.numberIneffective() -- number of cuts which were not applied because they had an
+	<code>effectiveness < effectivenessLb</code>
         <li> ReturnCode.numberInconsistent() -- number of invalid cuts
         <li> ReturnCode.numberInconsistentWrtIntegerModel() -- number of
                cuts that are invalid with respect to this integer model
-          <li> ReturnCode.numberInfeasible() -- number of cuts that would
-             make this integer model infeasible
-          <li> ReturnCode.numberApplied() -- number of integer cuts which
-             were applied to the integer model
-          <li> cs.size() == numberIneffective() +
-                            numberInconsistent() +
-    		      numberInconsistentWrtIntegerModel() +
-    		      numberInfeasible() +
-    		      nubmerApplied()
+          <li> ReturnCode.numberInfeasible() -- number of cuts that would make this integer model infeasible
+          <li> ReturnCode.numberApplied() -- number of integer cuts which were applied to the integer model
+          <li> cs.size() == numberIneffective() + numberInconsistent() +
+    		      numberInconsistentWrtIntegerModel() + numberInfeasible() + nubmerApplied()
         </ul>
     */
-    virtual ApplyCutsReturnCode applyCuts(const OsiCuts & cs,
-                                          double effectivenessLb = 0.0);
+    virtual ApplyCutsReturnCode applyCuts(const OsiCuts & cs, double effectivenessLb = 0.0);
 #endif
     //@}
     //@}
@@ -518,7 +501,7 @@ public:
           <li> <code>collb</code>: all columns have lower bound 0
           <li> <code>rowub</code>: all rows have upper bound infinity
           <li> <code>rowlb</code>: all rows have lower bound -infinity
-      <li> <code>obj</code>: all variables have 0 objective coefficient
+	  <li> <code>obj</code>: all variables have 0 objective coefficient
         </ul>
     */
     virtual void loadProblem(const CoinPackedMatrix& matrix,
@@ -530,8 +513,7 @@ public:
         constraints on the rows are given by lower and upper bounds). For
         default values see the previous method. <br>
     <strong>WARNING</strong>: The arguments passed to this method will be
-    freed using the C++ <code>delete</code> and <code>delete[]</code>
-    functions.
+    freed using the C++ <code>delete</code> and <code>delete[]</code> functions.
     */
     virtual void assignProblem(CoinPackedMatrix*& matrix,
                                double*& collb, double*& colub, double*& obj,
@@ -541,13 +523,13 @@ public:
     rows are given by sense/rhs/range triplets). If a pointer is 0 then the
     following values are the default:
     <ul>
-          <li> <code>colub</code>: all columns have upper bound infinity
-          <li> <code>collb</code>: all columns have lower bound 0
-      <li> <code>obj</code>: all variables have 0 objective coefficient
-          <li> <code>rowsen</code>: all rows are >=
-          <li> <code>rowrhs</code>: all right hand sides are 0
-          <li> <code>rowrng</code>: 0 for the ranged rows
-        </ul>
+        <li> <code>colub</code>: all columns have upper bound infinity
+	<li> <code>collb</code>: all columns have lower bound 0
+	<li> <code>obj</code>: all variables have 0 objective coefficient
+	<li> <code>rowsen</code>: all rows are >=
+	<li> <code>rowrhs</code>: all right hand sides are 0
+	<li> <code>rowrng</code>: 0 for the ranged rows
+    </ul>
     */
     virtual void loadProblem(const CoinPackedMatrix& matrix,
                              const double* collb, const double* colub,
@@ -558,9 +540,9 @@ public:
     /** Load in an problem by assuming ownership of the arguments (the
         constraints on the rows are given by sense/rhs/range triplets). For
         default values see the previous method. <br>
-    <strong>WARNING</strong>: The arguments passed to this method will be
-    freed using the C++ <code>delete</code> and <code>delete[]</code>
-    functions.
+	<strong>WARNING</strong>: The arguments passed to this method will be
+	freed using the C++ <code>delete</code> and <code>delete[]</code>
+	functions.
     */
     virtual void assignProblem(CoinPackedMatrix*& matrix,
                                double*& collb, double*& colub, double*& obj,
@@ -568,7 +550,7 @@ public:
                                double*& rowrng);
 
     /** Just like the other loadProblem() methods except that the matrix is
-    given in a standard column major ordered format (without gaps). */
+	given in a standard column major ordered format (without gaps). */
     virtual void loadProblem(const int numcols, const int numrows,
                              const int* start, const int* index,
                              const double* value,
@@ -577,7 +559,7 @@ public:
                              const double* rowlb, const double* rowub);
 
     /** Just like the other loadProblem() methods except that the matrix is
-    given in a standard column major ordered format (without gaps). */
+	given in a standard column major ordered format (without gaps). */
     virtual void loadProblem(const int numcols, const int numrows,
                              const int* start, const int* index,
                              const double* value,
@@ -587,14 +569,15 @@ public:
                              const double* rowrng);
 
     using OsiSolverInterface::readMps ;
+  
     /** Read an mps file from the given filename */
     virtual int readMps(const char *filename,
                         const char *extension = "mps");
 
     /** Write the problem into an mps file of the given filename.
-     If objSense is non zero then -1.0 forces the code to write a
-    maximization objective and +1.0 to write a minimization one.
-    If 0.0 then solver can do what it wants */
+	If objSense is non zero then -1.0 forces the code to write a
+	maximization objective and +1.0 to write a minimization one.
+	If 0.0 then solver can do what it wants */
     virtual void writeMps(const char *filename,
                           const char *extension = "mps",
                           double objSense=0.0) const;
@@ -611,7 +594,7 @@ public:
 
     /*! \brief Set the objective function name */
 
-    void setObjName (std::string name) ;
+    void setObjName(std::string name) ;
 
     /*! \brief Set a row name
 
@@ -666,10 +649,10 @@ public:
     /**@name Static instance counter methods */
     /** GLPK has a context which must be freed after all GLPK LPs (or MIPs) are freed.
      * It is automatically created when the first LP is created.
-        This method:
-        <ul>
-          <li>Increments by 1 the number of uses of the GLPK environment.
-        </ul>
+     This method:
+     <ul>
+         <li>Increments by 1 the number of uses of the GLPK environment.
+     </ul>
     */
     static void incrementInstanceCounter() {
         ++numInstances_;
@@ -678,8 +661,8 @@ public:
     /** GLPK has a context which must be freed after all GLPK LPs (or MIPs) are freed.
         This method:
         <ul>
-        <li>Decrements by 1 the number of uses of the GLPK environment.
-        <li>Deletes the GLPK environment when the number of uses is change to 0 from 1.
+            <li>Decrements by 1 the number of uses of the GLPK environment.
+	    <li>Deletes the GLPK environment when the number of uses is change to 0 from 1.
         </ul>
     */
     static void decrementInstanceCounter();
@@ -690,7 +673,6 @@ public:
     }
     //@}
 
-
     /**@name Constructors and destructor */
     //@{
     /// Default Constructor
@@ -700,10 +682,10 @@ public:
     virtual OsiSolverInterface * clone(bool copyData = true) const;
 
     /// Copy constructor
-    OsiGlpkSolverInterface( const OsiGlpkSolverInterface& );
+    OsiGlpkSolverInterface(const OsiGlpkSolverInterface&);
 
     /// Assignment operator
-    OsiGlpkSolverInterface& operator=( const OsiGlpkSolverInterface& rhs );
+    OsiGlpkSolverInterface& operator=(const OsiGlpkSolverInterface& rhs);
 
     /// Destructor
     virtual ~OsiGlpkSolverInterface();
@@ -717,12 +699,12 @@ protected:
     /**@name Protected methods */
     //@{
     /// Apply a row cut. Return true if cut was applied.
-    virtual void applyRowCut( const OsiRowCut & rc );
+    virtual void applyRowCut(const OsiRowCut & rc);
 
     /** Apply a column cut (bound adjustment).
         Return true if cut was applied.
     */
-    virtual void applyColCut( const OsiColCut & cc );
+    virtual void applyColCut(const OsiColCut & cc);
 
     /// Pointer to the model
     glp_prob * getMutableModelPtr() const;
@@ -734,7 +716,7 @@ private:
     //@{
 
     /// The real work of a copy constructor (used by copy and assignment)
-    void gutsOfCopy( const OsiGlpkSolverInterface & source );
+    void gutsOfCopy(const OsiGlpkSolverInterface & source);
 
     /// The real work of the constructor
     void gutsOfConstructor();
@@ -755,7 +737,7 @@ private:
     void freeCachedMatrix();
 
     /// free all cached data (except specified entries, see getLpPtr())
-    void freeCachedData( int keepCached = KEEPCACHED_NONE );
+    void freeCachedData(int keepCached = KEEPCACHED_NONE);
 
     /// free all allocated memory
     void freeAllMemory();
@@ -767,15 +749,17 @@ private:
     void fillColBounds() const;
     //@}
 
-
     /**@name Private member data */
     //@{
     /// GPLK model represented by this class instance
     mutable glp_prob* lp_;
-
+    /// parameters for GLPK
+    glp_smcp parm_;
+    /// Scale level (unavailable via the GLPK API)
+    int scale_;
+    
     /// number of GLPK instances currently in use (counts only those created by OsiGlpk)
     static unsigned int numInstances_;
-
 
     // Remember whether simplex or b&b was most recently done
     // 0 = simplex;  1 = b&b
@@ -808,7 +792,6 @@ private:
     /*! \brief Array for info blocks associated with hints. */
     mutable void *info_[OsiLastHintParam] ;
 
-
     /// Hotstart information
 
     /// size of column status and value arrays
@@ -838,8 +821,7 @@ private:
     bool isAbandoned_;
     /*! \brief  glpk stopped on lower objective limit
 
-      When minimising, this is the primal limit; when maximising, the dual
-      limit.
+      When minimising, this is the primal limit; when maximising, the dual limit.
     */
     bool isObjLowerLimitReached_;
     /*! \brief  glpk stopped on upper objective limit
