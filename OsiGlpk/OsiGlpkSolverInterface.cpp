@@ -166,23 +166,23 @@ void OGSI::initialSolve() {
     /*
       Solve the lp.
     */
-    int err = glp_simplex(model, &parm);
+    int err = glp_simplex(model, &parm_);
 
     // for Glpk, a solve fails if the initial basis is invalid or singular
     // thus, we construct a (advanced) basis first and try again
 #ifdef GLP_EBADB
     if (err == GLP_EBADB) {
         glp_adv_basis(model,0);
-        err = glp_simplex(model, &parm);
+        err = glp_simplex(model, &parm_);
     }
 #else
     if (err == GLP_ESING || err == GLP_EBADB || err == GLP_ECOND || err == GLP_EBOUND) {
         glp_adv_basis(model,0);
-	err = glp_simplex(model, &parm);
+	err = glp_simplex(model, &parm_);
     }
 #endif
 
-    iter_used_ = model->it_cnt;
+    iter_used_ = glp_get_it_cnt(model);
     /*
       Sort out the various state indications.
 
@@ -285,7 +285,7 @@ void OGSI::resolve() {
     }
 #endif
 
-    iter_used_ = model->it_cnt;
+    iter_used_ = glp_get_it_cnt(model);
 
     isIterationLimitReached_ = false;
     isTimeLimitReached_      = false;
@@ -416,7 +416,7 @@ void OGSI::branchAndBound ()
           Previous comments expressed uncertainty about the iteration count. This
           should be checked at some point. -- lh, 070709 --
         */
-        iter_used_ = model->it_cnt;
+        iter_used_ = glp_get_it_cnt(model);
         isIterationLimitReached_ = false;
         isTimeLimitReached_      = false;
         isAbandoned_             = false;
@@ -2593,7 +2593,7 @@ void OGSI::loadProblem (const CoinPackedMatrix &matrix,
 	
         parm_.presolve = presolVal;
         parm_.meth     = usedualVal;
-        scale_         = scaleVal;
+        glp_scale_prob(lp_scale_, scaleVal);
         parm_.msg_lev  = logVal;
         messageHandler()->setLogLevel(logVal);
     }
@@ -3126,9 +3126,9 @@ void OGSI::gutsOfCopy (const OsiGlpkSolverInterface &source)
     intParam       = srcparmx.presolve;
     parmx.presolve = intParam;
     intParam       = srcparmx.meth;
-    lpx.math       = intParam;
-    intParam       = srclpx.scale_;
-    lpx.scale_     = intParam;
+    parmx.meth     = intParam;
+    intParam       = srclpx.scale_; //YC to be verified
+    parmx.scale_   = intParam;
     
     /*
       Printing is a bit more complicated. Pull the parameter and set the log
