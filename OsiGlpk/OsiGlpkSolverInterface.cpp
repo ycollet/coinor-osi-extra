@@ -102,7 +102,7 @@ extern "C" {
 
 namespace {
 const double CoinInfinity = COIN_DBL_MAX;
-const double GlpkZeroTol = 1.0e-9;
+const double GlpkZeroTol  = 1.0e-9;
 }
 
 /* Cut names down to a reasonable size. */
@@ -183,6 +183,7 @@ void OGSI::initialSolve() {
 #endif
 
     iter_used_ = glp_get_it_cnt(model);
+    
     /*
       Sort out the various state indications.
 
@@ -195,6 +196,7 @@ void OGSI::initialSolve() {
 
       If we ever reach the default case, we're deeply confused.
     */
+    
     isIterationLimitReached_ = false;
     isTimeLimitReached_      = false;
     isAbandoned_             = false;
@@ -362,10 +364,13 @@ void OGSI::resolve() {
 void OGSI::branchAndBound ()
 {
     glp_prob *model = getMutableModelPtr();
+    
     /*
       Destroy cached data.
     */
+    
     freeCachedData(OGSI::FREECACHED_RESULTS);
+    
     /*
       Assuming we have integer variables in the model, call the best MIP solver
       we can manage.
@@ -375,6 +380,7 @@ void OGSI::branchAndBound ()
 
       solve_mip(lp, GLP_OFF) needs an initial optimal solution to the relaxation.
     */
+    
     if (glp_get_num_int(model)) {
         int err = GLP_EFAIL;
 
@@ -386,6 +392,7 @@ void OGSI::branchAndBound ()
         }
         err = solve_mip(model, GLP_OFF);
 #endif
+	
         /*
           We have a result. What is it? Start with a positive attitude and revise as
           needed. The various GLP_E* and GLP_* defines are stable back as far as
@@ -416,6 +423,7 @@ void OGSI::branchAndBound ()
           Previous comments expressed uncertainty about the iteration count. This
           should be checked at some point. -- lh, 070709 --
         */
+	
         iter_used_ = glp_get_it_cnt(model);
         isIterationLimitReached_ = false;
         isTimeLimitReached_      = false;
@@ -465,6 +473,7 @@ void OGSI::branchAndBound ()
 
         //check this also if err!=LPX_E_OPT, so we know about feasibility in case time/resource limit is reached
         int mip_status = glp_mip_status(model);
+	
         switch (mip_status) {
         case GLP_OPT: {
             isFeasible_ = true;
@@ -486,17 +495,21 @@ void OGSI::branchAndBound ()
             break;
         }
         }
+	
         /*
           The final action is to note that our last call to glpk was the MIP solver.
         */
+	
         bbWasLast_ = 1;
     }
+    
     /*
       Not a MIP (no integer variables). Call the LP solver. Since we can call
       branchAndBound with no initial LP solution, initialSolve is appropriate here.
       (But for glpk, it actually makes no difference --- glp_simplex makes the
       decision on how to proceed.)
     */
+    
     else {
         initialSolve();
     }
@@ -574,20 +587,20 @@ bool OGSI::setDblParam (OsiDblParam key, double value)
     bool retval = false;
 
     switch (key) {
-    case OsiDualObjectiveLimit:
-        // as of 4.7, GLPK only uses this if it does dual simplex
+    case OsiDualObjectiveLimit: // as of 4.7, GLPK only uses this if it does dual simplex
     {
         dualObjectiveLimit_ = value;
-        if (getObjSense() == 1) {			// minimization
+        if (getObjSense() == 1) { 
+	    // minimization
             parm_.obj_ul = value;
-        } else {            				// maximization
+        } else { 
+	    // maximization
             parm_.obj_ll = value;
         }
         retval = true;
         break;
     }
-    case OsiPrimalObjectiveLimit:
-        // as of 4.7, GLPK only uses this if it does dual simplex
+    case OsiPrimalObjectiveLimit: // as of 4.7, GLPK only uses this if it does dual simplex
     {
         primalObjectiveLimit_ = value;
         if (getObjSense() == 1) {
@@ -635,8 +648,7 @@ bool OGSI::setDblParam (OsiDblParam key, double value)
 
 //-----------------------------------------------------------------------------
 
-bool OGSI::setStrParam (OsiStrParam key,
-                        const std::string &value) {
+bool OGSI::setStrParam (OsiStrParam key, const std::string &value) {
     bool retval = false;
 
     switch (key) {
@@ -700,16 +712,20 @@ bool OGSI::setHintParam (OsiHintParam key, bool sense,
 {
     bool retval = false;
     CoinMessageHandler *msgHdl = messageHandler();
+    
     /*
       Check for out of range.
     */
+    
     if (key >= OsiLastHintParam) return (false);
+    
     /*
       Set the hint in the OSI structures. Unlike the other set*Param routines,
       setHintParam will return false for key == OsiLastHintParam. Unfortunately,
       it'll also throw for strength = OsiForceDo, without setting a return value.
       We need to catch that throw.
     */
+    
     try {
         retval = OsiSolverInterface::setHintParam(key,sense,strength);
     } catch (CoinError&) {
@@ -765,9 +781,11 @@ bool OGSI::setHintParam (OsiHintParam key, bool sense,
         retval = true;
         break;
     }
+      
     /*
       0 is no scaling, 3 is geometric mean followed by equilibration.
     */
+      
     case OsiDoScale: {
         if (sense == false) {
             if (strength >= OsiHintTry) glp_unscale_prob(lp_);
@@ -777,10 +795,12 @@ bool OGSI::setHintParam (OsiHintParam key, bool sense,
         retval = true;
         break;
     }
+      
     /*
       Glpk supports four levels, 0 (no output), 1 (errors only), 2 (normal), and
       3 (normal plus informational).
     */
+      
     case OsiDoReducePrint: {
         if (sense == true) {
             if (strength <= OsiHintTry) {
@@ -800,12 +820,14 @@ bool OGSI::setHintParam (OsiHintParam key, bool sense,
         retval = true;
         break;
     }
+      
     /*
       The OSI spec says that unimplemented options (and, by implication, hints)
       should return false. In the case of a hint, however, we can ignore anything
       except OsiForceDo, so usability says we should anticipate new hints and set
       this up so the solver doesn't break. So return true.
     */
+      
     default: {
         unimp_hint(msgHdl,!sense,sense,strength,"unrecognized hint");
         retval = true;
@@ -945,6 +967,7 @@ bool OGSI::isProvenDualInfeasible() const {
   current objective is better than the primal limit. getObjSense == 1 is
   minimisation, -1 is maximisation.
 */
+
 bool OGSI::isPrimalObjectiveLimitReached() const {
     bool retval = false;
     double obj = getObjValue();
@@ -969,6 +992,7 @@ bool OGSI::isPrimalObjectiveLimitReached() const {
   This should return true if the solver stopped on the dual limit, or if the
   current objective is worse than the dual limit.
 */
+
 bool OGSI::isDualObjectiveLimitReached() const {
     bool retval = false;
     double obj = getObjValue();
@@ -989,11 +1013,9 @@ bool OGSI::isDualObjectiveLimitReached() const {
     return (retval);
 }
 
-
 bool OGSI::isIterationLimitReached() const {
     return isIterationLimitReached_;
 }
-
 
 bool OGSI::isTimeLimitReached() const {
     return isTimeLimitReached_;
@@ -1012,15 +1034,18 @@ bool OGSI::isFeasible() const {
 
   Nonbasic fixed variables (GLP_NS) are translated to CWSB::atLowerBound.
 */
+
 CoinWarmStart *OGSI::getWarmStart() const
 {
     /*
       Create an empty basis and size it to the correct dimensions.
     */
+  
     CoinWarmStartBasis *ws = new CoinWarmStartBasis();
     int numcols = getNumCols();
     int numrows = getNumRows();
     ws->setSize(numcols,numrows);
+    
     /*
       Walk the rows. Retrieve the status information from the glpk model and
       store it in the CWSB object.
@@ -1028,6 +1053,7 @@ CoinWarmStart *OGSI::getWarmStart() const
       Thus, Glpk's at-lower-bound will be mapped to Osi's at-upper-bound
        and  Glpk's at-upper-bound will be mapped to Osi's at-lower-bound.
     */
+    
     for (int i = 0; i < numrows; i++) {
         int stati = glp_get_row_stat(lp_, i+1);
         switch (stati) {
@@ -1054,9 +1080,11 @@ CoinWarmStart *OGSI::getWarmStart() const
         }
         }
     }
+    
     /*
       And repeat for the columns.
     */
+    
     for (int j = 0; j < numcols; j++) {
         int statj = glp_get_col_stat(lp_, j+1);
         switch (statj) {
@@ -1105,23 +1133,20 @@ bool OGSI::setWarmStart (const CoinWarmStart* warmstart)
     /*
       If this is a simple refresh request, we're done.
     */
-    if (warmstart == 0) {
-        return (true);
-    }
+  
+    if (warmstart == 0) return (true);
+    
     /*
       Check that the parameter is a CWSB of the appropriate size.
     */
+    
     const CoinWarmStartBasis *ws = dynamic_cast<const CoinWarmStartBasis *>(warmstart);
-    if (ws == 0) {
-        return false;
-    }
+    if (ws == 0) return false;
 
     int numcols = ws->getNumStructural();
     int numrows = ws->getNumArtificial();
 
-    if (numcols != getNumCols() || numrows != getNumRows()) {
-        return (false);
-    }
+    if (numcols != getNumCols() || numrows != getNumRows()) return false;
     
     /*
       Looks like a basis. Translate to the appropriate codes for glpk and install.
@@ -1151,7 +1176,7 @@ bool OGSI::setWarmStart (const CoinWarmStart* warmstart)
         }
         default: {
             assert(false);
-            return (false);
+            return false;
         }
         }
 
@@ -1180,14 +1205,14 @@ bool OGSI::setWarmStart (const CoinWarmStart* warmstart)
         }
         default: {
             assert(false);
-            return (false);
+            return false;
         }
         }
 
         glp_set_col_stat(lp_, j+1, stati);
     }
 
-    return (true);
+    return true;
 }
 
 //#############################################################################
@@ -1425,6 +1450,7 @@ const double * OGSI::getRowLower() const {
             type = glp_get_row_type(model,i+1);
             lb = glp_get_row_lb(model,i+1); if (lb == -DBL_MAX) lb = 0.0;
             ub = glp_get_row_ub(model,i+1); if (ub == +DBL_MAX) ub = 0.0;
+	    
             switch(type) {
             case GLP_FR:
                 lb = -inf;
@@ -1575,7 +1601,7 @@ const CoinPackedMatrix * OGSI::getMatrixByCol() const {
 // Get solver's value for infinity
 //-----------------------------------------------------------------------------
 double OGSI::getInfinity() const {
-    return (CoinInfinity);
+    return CoinInfinity;
 }
 
 //#############################################################################
@@ -1599,7 +1625,8 @@ const double *OGSI::getColSolution() const
       Use the cached solution vector, if present. If we have no constraint system,
       return 0.
     */
-    if (colsol_ != 0) return (colsol_);
+  
+    if (colsol_ != 0) return colsol_;
 
     int numcols = getNumCols();
     if (numcols == 0) return 0;
@@ -1633,10 +1660,12 @@ const double *OGSI::getColSolution() const
             else if (colupper_[j] < 0.0) colsol_[j] = colupper_[j];
         }
     }
+    
     /*
       We should have a defined solution. For simplex, refresh the reduced costs
       as well as the primal solution. Remove infinitesimals from the results.
     */
+    
     else if (bbWasLast_ == 0) {
         int j;
         for (j = 0; j < numcols; j++) {
@@ -1647,10 +1676,12 @@ const double *OGSI::getColSolution() const
             if (fabs(redcost_[j]) < GlpkZeroTol) redcost_[j] = 0.0;
         }
     }
+    
     /*
       Last solve was branch-and-bound. Set the reduced costs to 0. Remove
       infinitesimals from the results.
     */
+    
     else {
         int j;
         for (j = 0; j < numcols; j++) {
@@ -1660,7 +1691,7 @@ const double *OGSI::getColSolution() const
         }
     }
 
-    return (colsol_);
+    return colsol_;
 }
 
 //-----------------------------------------------------------------------------
@@ -1677,16 +1708,19 @@ const double *OGSI::getRowPrice() const
       If we have a cached solution, use it. If the constraint system is empty,
       return 0. Otherwise, allocate a new vector.
     */
-    if (rowsol_ != 0) return (rowsol_);
+  
+    if (rowsol_ != 0) return rowsol_;
 
     int numrows = getNumRows();
     if (numrows == 0) return 0;
 
     rowsol_ = new double[numrows];
+    
     /*
       For simplex, we have dual variables. For MIP, just set them to zero. Remove
       infinitesimals from the results.
     */
+    
     if (bbWasLast_ == 0) {
         int i;
         for (i = 0; i < numrows; i++) {
@@ -1700,7 +1734,7 @@ const double *OGSI::getRowPrice() const
         }
     }
 
-    return (rowsol_);
+    return rowsol_;
 }
 
 //-----------------------------------------------------------------------------
@@ -1713,12 +1747,13 @@ const double *OGSI::getRowPrice() const
   To use glpk's routine (glp_get_col_dual), the interface needs to track the
   origin of the dual (row price) values.
 */
+
 const double * OGSI::getReducedCost() const {
     /*
       Return the cached copy, if it exists.
     */
   
-    if (redcost_ != 0) return (redcost_);
+    if (redcost_ != 0) return redcost_;
     
     /*
       We need to calculate. Make sure we have a constraint system, then allocate
@@ -1726,7 +1761,7 @@ const double * OGSI::getReducedCost() const {
     */
     
     int n = getNumCols();
-    if (n == 0) return (0);
+    if (n == 0) return 0;
 
     redcost_ = new double[n];
     CoinDisjointCopyN(getObjCoefficients(),n,redcost_);
@@ -1736,7 +1771,7 @@ const double * OGSI::getReducedCost() const {
     */
     
     const double *y = getRowPrice();
-    if (!y) return (redcost_);
+    if (!y) return redcost_;
     
     /*
       Acquire the constraint matrix and calculate y*A.
@@ -1757,7 +1792,7 @@ const double * OGSI::getReducedCost() const {
 
     delete[] yA;
 
-    return (redcost_);
+    return redcost_;
 }
 
 //-----------------------------------------------------------------------------
@@ -1782,7 +1817,7 @@ const double *OGSI::getRowActivity() const
     */
     
     int m = getNumRows();
-    if (m == 0) return (0);
+    if (m == 0) return 0;
 
     rowact_ = new double[m];
     
@@ -1793,7 +1828,7 @@ const double *OGSI::getRowActivity() const
     const double *x = getColSolution();
     if (!x) {
         CoinZeroN(rowact_,m);
-        return (rowact_);
+        return rowact_;
     }
     
     /*
@@ -1811,7 +1846,7 @@ const double *OGSI::getRowActivity() const
         if (fabs(rowact_[i]) < GlpkZeroTol) rowact_[i] = 0;
     }
 
-    return (rowact_);
+    return rowact_;
 }
 
 //-----------------------------------------------------------------------------
@@ -1893,9 +1928,10 @@ void OGSI::setColLower (int j, double lbj)
       Get the upper bound, so we can call setColBounds.  glpk reports 0 for an
       infinite bound, so we need to check the status and possibly correct.
     */
-    double inf = getInfinity();
-    int type = glp_get_col_type(lp_,j+1);
-    double ubj = glp_get_col_ub(lp_,j+1); if (ubj == +DBL_MAX) ubj = 0.0;
+  
+    double inf  = getInfinity();
+    int    type = glp_get_col_type(lp_,j+1);
+    double ubj  = glp_get_col_ub(lp_,j+1); if (ubj == +DBL_MAX) ubj = 0.0;
     
     switch (type) {
     case GLP_UP:
@@ -1924,11 +1960,10 @@ void OGSI::setColLower (int j, double lbj)
         const double *x = getColSolution();
         if (x) {
             if (x[j] < lbj-GlpkZeroTol) {
-                std::cout
-                        << "OGSI(" << std::hex << this << std::dec
-                        << ")::setColLower: new bound "
-                        << lbj << " exceeds current value " << x[j]
-                        << " by " << (lbj-x[j]) << "." << std::endl;
+	        std::cout << "OGSI(" << std::hex << this << std::dec;
+		std::cout << ")::setColLower: new bound ";
+		std::cout << lbj << " exceeds current value " << x[j];
+		std::cout << " by " << (lbj-x[j]) << "." << std::endl;
             }
         }
     }
@@ -1948,9 +1983,9 @@ void OGSI::setColUpper (int j, double ubj)
       infinite bound, so we need to check the status and possibly correct.
     */
   
-    double inf = getInfinity();
-    int type   = glp_get_col_type(lp_,j+1);
-    double lbj = glp_get_col_lb(lp_,j+1); if (lbj == -DBL_MAX) lbj = 0.0;
+    double inf  = getInfinity();
+    int    type = glp_get_col_type(lp_,j+1);
+    double lbj  = glp_get_col_lb(lp_,j+1); if (lbj == -DBL_MAX) lbj = 0.0;
     
     switch (type) {
     case GLP_LO:
@@ -1979,11 +2014,10 @@ void OGSI::setColUpper (int j, double ubj)
         const double *x = getColSolution();
         if (x) {
             if (x[j] > ubj+GlpkZeroTol) {
-                std::cout
-                        << "OGSI(" << std::hex << this << std::dec
-                        << ")::setColUpper: new bound "
-                        << ubj << " exceeds current value " << x[j]
-                        << " by " << (x[j]-ubj) << "." << std::endl;
+	        std::cout << "OGSI(" << std::hex << this << std::dec;
+		std::cout << ")::setColUpper: new bound ";
+		std::cout << ubj << " exceeds current value " << x[j];
+		std::cout << " by " << (x[j]-ubj) << "." << std::endl;
             }
         }
     }
@@ -2052,9 +2086,7 @@ void OGSI::setColBounds (int j, double lower, double upper)
 
 //-----------------------------------------------------------------------------
 
-void OGSI::setColSetBounds(const int* indexFirst,
-                           const int* indexLast,
-                           const double* boundList) {
+void OGSI::setColSetBounds(const int* indexFirst, const int* indexLast, const double* boundList) {
     OsiSolverInterface::setColSetBounds(indexFirst, indexLast, boundList);
 }
 
@@ -2100,7 +2132,7 @@ void OGSI::setRowUpper(int elementIndex, double elementValue) {
 
     type = glp_get_row_type(getMutableModelPtr(),elementIndex+1);
     lb   = glp_get_row_lb(getMutableModelPtr(),elementIndex+1); if (lb == -DBL_MAX) lb = 0.0;
-    ub = elementValue;
+    ub   = elementValue;
     
     switch(type) {
     case GLP_LO:
@@ -2126,6 +2158,7 @@ void OGSI::setRowUpper(int elementIndex, double elementValue) {
   As with setColBounds, just changing the bounds should not invalidate the
   current rim vectors.
 */
+
 void OGSI::setRowBounds (int i, double lower, double upper) {
     /*
       Free only the row and column solution, keep the cached structural vectors.
@@ -2161,8 +2194,7 @@ void OGSI::setRowBounds (int i, double lower, double upper) {
 
 //-----------------------------------------------------------------------------
 
-void OGSI::setRowType(int elementIndex, char sense, double rightHandSide,
-                 double range) {
+void OGSI::setRowType(int elementIndex, char sense, double rightHandSide, double range) {
     // Could be in OsiSolverInterfaceImpl.
     double lower = 0.0;
     double upper = 0.0;
@@ -2172,9 +2204,7 @@ void OGSI::setRowType(int elementIndex, char sense, double rightHandSide,
 
 //-----------------------------------------------------------------------------
 
-void OGSI::setRowSetBounds(const int* indexFirst,
-                           const int* indexLast,
-                           const double* boundList) {
+void OGSI::setRowSetBounds(const int* indexFirst, const int* indexLast, const double* boundList) {
     // Could be in OsiSolverInterface (should'nt be implemeted at here).
     OsiSolverInterface::setRowSetBounds(indexFirst, indexLast, boundList);
 }
@@ -2247,8 +2277,8 @@ void OGSI::setInteger(const int* indices, int len) {
   Opt for the natural sense (minimisation) unless the user is clear that
   maximisation is what's desired.
 */
-void OGSI::setObjSense(double s)
-{
+
+void OGSI::setObjSense(double s) {
     freeCachedData(OGSI::FREECACHED_RESULTS);
 
     if (s <= -1.0) glp_set_obj_dir(lp_,GLP_MAX);
@@ -2269,13 +2299,12 @@ void OGSI::setColSolution(const double * cs) {
     // Other results (such as row prices) might not make sense with this
     // new solution, but we can't free all the results we have, since the
     // row prices may have already been set with setRowPrice.
-    if (cs == 0)
-        delete [] colsol_;
+    
+    if (cs == 0) delete [] colsol_;
     else {
         int nc = getNumCols();
 
-        if (colsol_ == 0)
-            colsol_ = new double[nc];
+        if (colsol_ == 0) colsol_ = new double[nc];
 
         // Copy in new col solution.
         CoinDisjointCopyN(cs, nc, colsol_);
@@ -2294,13 +2323,12 @@ void OGSI::setRowPrice(const double * rs) {
     // Other results (such as column solutions) might not make sense with this
     // new solution, but we can't free all the results we have, since the
     // column solutions may have already been set with setColSolution.
-    if (rs == 0)
-        delete [] rowsol_;
+    
+    if (rs == 0) delete [] rowsol_;
     else {
         int nr = getNumRows();
 
-        if (rowsol_ == 0)
-            rowsol_ = new double[nr];
+        if (rowsol_ == 0) rowsol_ = new double[nr];
 
         // Copy in new col solution.
         CoinDisjointCopyN(rs, nr, rowsol_);
@@ -2316,6 +2344,7 @@ void OGSI::addCol (const CoinPackedVectorBase& vec,
     // Note: GLPK expects only non-zero coefficients will be given in
     //   glp_set_mat_col and will abort if there are any zeros.  So any
     //   zeros must be removed prior to calling glp_set_mat_col.
+    
     glp_prob *model = getMutableModelPtr();
     freeCachedData(OGSI::KEEPCACHED_ROW);
 
@@ -2578,10 +2607,12 @@ void OGSI::loadProblem (const CoinPackedMatrix &matrix,
         std::cout << "loading GLP(" << std::hex << lp_ << std::dec << ")." << std::endl;
 #endif
         parm_.it_lim = maxIteration_;
-        if (getObjSense() == 1) {			// minimization
+        if (getObjSense() == 1) {
+	    // minimization
             parm_.obj_ul = dualObjectiveLimit_;
             parm_.obj_ll = primalObjectiveLimit_;
-        } else {					// maximization
+        } else {
+	    // maximization
             parm_.obj_ll = dualObjectiveLimit_;
             parm_.obj_ul = primalObjectiveLimit_;
         }
@@ -3430,6 +3461,7 @@ void OGSI::freeAllMemory() {
 /*!
   Set the objective function name.
 */
+
 void OGSI::setObjName (std::string name)
 {
     OsiSolverInterface::setObjName(name);
@@ -3439,6 +3471,7 @@ void OGSI::setObjName (std::string name)
 /*!
   Set a row name. Make sure both glpk and OSI see the same name.
 */
+
 void OGSI::setRowName (int ndx, std::string name)
 {
     int nameDiscipline;
@@ -3468,6 +3501,7 @@ void OGSI::setRowName (int ndx, std::string name)
 /*!
   Set a column name. Make sure both glpk and OSI see the same name.
 */
+
 void OGSI::setColName (int ndx, std::string name)
 {
     int nameDiscipline;
